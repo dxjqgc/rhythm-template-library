@@ -1,0 +1,23 @@
+pyproject.toml
+  1fc2b82cc0d088cf 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "f57efe9cc6209d6bd94898ce9ea7269f66e63cfb",
+  "prompts": {
+    "1fc2b82cc0d088cf": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "30466ad9-8a62-4764-8217-7485ccc250a8",
+        "model": "glm-5.2"
+      },
+      "human_author": "rhett.hu",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 0,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  }
+}
