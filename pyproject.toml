@@ -7,3 +7,8 @@ dependencies = [
     "music21>=10.5.0",
     "pytheory>=0.57.13",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
