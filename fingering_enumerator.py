@@ -15,9 +15,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from itertools import product
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import pytheory
+
+from playability import plan_fingers, playability_cost, required_pitch_classes
 
 if TYPE_CHECKING:
     from pytheory import Chord, Fingering, Fretboard, Tone
@@ -249,6 +251,8 @@ def enumerate_fingerings(
     require_root: bool = True,
     mute_allowed: bool = True,
     strict: bool = True,
+    ranking: Literal["playable", "legacy"] = "playable",
+    allow_omissions: bool = True,
     limit: int | None = None,
 ) -> list["Fingering"]:
     """枚举指板上所有能弹出 ``chord`` 的指法。
@@ -268,23 +272,39 @@ def enumerate_fingerings(
     mute_allowed
         是否允许闷音（不弹某些弦）。允许则结果更多样，禁则只保留跨全部弦的指法。
     strict
-        为 True 时只保留 ``identify()`` 能识别为目标和弦的指法（过滤掉不完整、
-        单音或只构成 power chord 等噪音）。False 则保留所有和弦内音组合。
+        为 True 时施加音乐完整性过滤（必需音级齐全、非 power chord、非冗余大拇指）。
+        False 则保留所有和弦内音组合。在 ``"playable"`` 模式下，物理可行性（手指
+        分配）**不受 strict 控制**：``strict=False`` 也不会放行按不出来的手型。
+    ranking
+        ``"playable"``（默认）用 :func:`playability.playability_cost` 的连续代价模型
+        排序，并把手指分配可行性作为硬约束，结果更接近吉他手实际会用的指法；
+        ``"legacy"`` 走旧的 ``identify()`` 硬检查 + :func:`rank_key` 分层排序。
+    allow_omissions
+        仅 ``"playable"`` 模式有效。允许按吉他惯例省略和弦音（完全五音、
+        音数 >= 5 时的十一音），省一个音在排序里计一次
+        :data:`playability.W_OMISSION` 惩罚。三和弦永远不省，
+        详见 :func:`playability.required_pitch_classes`。
     limit
-        若给定，只返回评分最高的前 N 个指法。
+        若给定，只返回排序最靠前的 N 个指法。
 
     Returns
     -------
     list[Fingering]
-        按 :func:`rank_key` 分层排序的指法列表（原位 > 转位、完整覆盖 > 少弹、
-        指头少 > 多、跨度小 > 大）。
+        排序后的指法列表。``"playable"`` 下按可演奏性代价升序（越顺手越靠前），
+        ``"legacy"`` 下按 :func:`rank_key` 分层排序。
     """
     if isinstance(chord, str):
         chord = pytheory.Chord.from_symbol(chord)
 
-    target_pcs = chord.pitch_classes          # set[int]
+    target_pcs = set(chord.pitch_classes)
     root_pc = _pitch_class(chord.root)
     open_tones = fretboard.tones               # 低音弦 -> 高音弦
+
+    # 必需音级：playable 模式下允许按惯例省略五音等，legacy 模式要求全含。
+    if ranking == "playable" and allow_omissions:
+        required_pcs = required_pitch_classes(chord)
+    else:
+        required_pcs = target_pcs
 
     # 每根弦可选把位：None(闷音) 或落在和弦内音上的品
     options: list[list[int | None]] = []
@@ -298,6 +318,7 @@ def enumerate_fingerings(
         options.append(opts)
 
     results: list["Fingering"] = []
+    scored: list[tuple[float, "Fingering"]] = []
     for combo in product(*options):
         if all(p is None for p in combo):
             continue
@@ -306,14 +327,38 @@ def enumerate_fingerings(
         if fretted and (max(fretted) - min(fretted)) > max_stretch:
             continue
 
-        if require_root:
-            present_pcs = {
-                _pitch_class(open_tones[i].transpose(p))
-                for i, p in enumerate(combo)
-                if p is not None
-            }
-            if root_pc not in present_pcs:
+        present_pcs = {
+            _pitch_class(open_tones[i].transpose(p))
+            for i, p in enumerate(combo)
+            if p is not None
+        }
+        if require_root and root_pc not in present_pcs:
+            continue
+
+        if ranking == "playable":
+            if strict:
+                # 必需音级齐全。省略只发生在 required_pitch_classes 允许的音上，
+                # 且 options 只取和弦内音，故不会引入非和弦音——E sus4(E,A,B) 想冒充
+                # A major 仍会因缺三音 C# 被拒。
+                if not required_pcs.issubset(present_pcs):
+                    continue
+                if is_redundant_thumb(combo, required_pcs, open_tones):
+                    continue
+            # 物理硬约束：四根手指真的按得出来。跨度检查放行、手指不够的手型在此剔除。
+            plan = plan_fingers(combo)
+            if plan is None:
                 continue
+            fingering = fretboard.fingering(*combo)
+            cost = playability_cost(
+                combo,
+                fingering.tones,
+                root_pc=root_pc,
+                n_omitted=len(target_pcs - present_pcs),
+                plan=plan,
+                open_tones=open_tones,
+            )
+            scored.append((cost, fingering))
+            continue
 
         fingering = fretboard.fingering(*combo)
 
@@ -339,7 +384,12 @@ def enumerate_fingerings(
 
         results.append(fingering)
 
-    results.sort(key=lambda f: rank_key(f, root_pc=root_pc))
+    if ranking == "playable":
+        # 稳定排序：代价相同时保持 product 的生成顺序（把位由低到高），结果确定。
+        scored.sort(key=lambda pair: pair[0])
+        results = [f for _, f in scored]
+    else:
+        results.sort(key=lambda f: rank_key(f, root_pc=root_pc))
 
     if limit is not None:
         results = results[:limit]
