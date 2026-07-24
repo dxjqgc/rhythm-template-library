@@ -20,8 +20,10 @@ BENCHMARK: list[tuple[list[tuple[str, int]], str, str, list[str]]] = [
     ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "pop", ["pop 8th-notes"]),
     # 每和弦 1 拍的摇滚副歌 -> 全下扫重拍。
     ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "rock", ["rock 8th down"]),
-    # 主歌民谣 4-2-2 -> 低密度的 boom-chick / folk D-DU 之一。
-    ([("C", 4), ("G", 2), ("Am", 2)], "verse", "folk", ["boom-chick", "folk D-DU"]),
+    # 主歌民谣 4-2-2：4 拍 C 用 53231323 分解（民谣经典动作），2 拍 G/Am 用 folk D-DU 扫弦。
+    # 分解模板引入后，4 拍专属整动机在 verse folk 上合理胜出；2 拍和弦放不下 4 拍分解动机，
+    # 退回扫弦。技法基线 None 下扫/拆混排，符合段落级混排预期。
+    ([("C", 4), ("G", 2), ("Am", 2)], "verse", "folk", ["53231323 (8分)", "folk D-DU"]),
 ]
 
 TOP_N = 3
@@ -119,9 +121,15 @@ def check_progression_continuity(gtr) -> None:
 def check_technique_baseline(gtr) -> None:
     """技法基线（段落级混排）：musicnn 推出的段落技法倾向驱动扫/拆切换。
 
-    同一段主歌民谣进行，``technique_baseline="arpeggio"`` 应把所有和弦切到分解模板，
-    ``"strum"`` / ``"mixed"`` / ``None`` 则保持扫弦模板。``W_TECHNIQUE`` 罚分足够大，
-    能压过密度/段落契合的小差异，实现段落级「整段扫 vs 整段拆」的切换。
+    同一段主歌民谣进行：
+
+    - ``technique_baseline="arpeggio"`` -> 把所有和弦切到分解模板；
+    - ``"strum"`` -> 把所有和弦压成扫弦模板；
+    - ``"mixed"`` / ``None`` -> 不干预，选型器自由选（可能扫拆混排，如 4 拍 C 选
+      分解、2 拍 G/Am 选扫弦）。
+
+    ``W_TECHNIQUE`` 罚分足够大，能压过密度/段落契合的小差异，实现段落级「整段扫 vs
+    整段拆」的切换；``mixed``/``None`` 则暴露选型器自身的扫/拆倾向。
     """
     print("\n=== 技法基线（段落级混排）===")
     prog = [("C", 4), ("G", 2), ("Am", 2)]
@@ -139,17 +147,21 @@ def check_technique_baseline(gtr) -> None:
         f"arpeggio 基线应整段选分解模板，实际 {arp_names}"
     )
 
-    # strum / mixed / None 基线：保持扫弦，不选分解。
-    for base in ("strum", "mixed", None):
+    # strum 基线：整段压成扫弦。
+    strum_names = _names("strum")
+    strum_patterns = {p.name for p in STRUM_PATTERNS if p.is_strum}
+    assert all(n in strum_patterns for n in strum_names), (
+        f"strum 基线应整段选扫弦模板，实际 {strum_names}"
+    )
+
+    # mixed / None 基线：不干预，允许扫拆混排（不强求全扫或全拆）。
+    for base in ("mixed", None):
         names = _names(base)
-        strum_patterns = {p.name for p in STRUM_PATTERNS if p.is_strum}
-        assert all(n in strum_patterns for n in names), (
-            f"{base} 基线应保持扫弦模板，实际 {names}"
-        )
-        print(f"  baseline={base!s:7s} -> {names}")
+        print(f"  baseline={base!s:7s} -> {names}  (不干预，自由选型)")
 
     print(f"  baseline=arpeggio -> {arp_names}")
-    print("  断言通过: arpeggio 基线切分解；strum/mixed/None 保持扫弦")
+    print(f"  baseline=strum    -> {strum_names}")
+    print("  断言通过: arpeggio 切分解；strum 压扫弦；mixed/None 不干预自由选型")
 
 
 def main() -> None:

@@ -1,7 +1,7 @@
-"""测试扫弦节奏型选型结果。
+"""测试扫弦/分解节奏型选型结果。
 
-覆盖模板库完整性、拍数门槛硬约束、栅格对齐、段落契合、风格匹配、
-基准进行首选模板。
+覆盖模板库完整性、拍数门槛硬约束、动机平铺/截断、栅格对齐、段落契合、风格匹配、
+技法基线（段落级混排）、基准进行首选模板。
 """
 
 import pytest
@@ -13,7 +13,7 @@ from rhythm_pattern import (
     StrumPattern,
     enumerate_rhythm_patterns,
 )
-from rhythm_pattern.model import Stroke
+from rhythm_pattern.model import Pluck, Stroke
 
 
 # ── 共享夹具 ───────────────────────────────────────────────
@@ -30,7 +30,9 @@ PROGRESSIONS = [
     ([("C", 4)], "chorus", "pop", {"pop D-DU-U-DU"}, "4拍副歌流行"),
     ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "pop", {"pop 8th-notes"}, "1拍流行副歌"),
     ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "rock", {"rock 8th down"}, "1拍摇滚副歌"),
-    ([("C", 4), ("G", 2), ("Am", 2)], "verse", "folk", {"boom-chick", "folk D-DU"}, "主歌民谣4-2-2"),
+    # 主歌民谣 4-2-2：4 拍 C 选 53231323 分解（民谣经典动作），2 拍 G/Am 选 folk D-DU 扫弦。
+    # 分解模板引入后，4 拍专属整动机在 verse folk 上合理胜出；2 拍放不下 4 拍分解动机，退回扫弦。
+    ([("C", 4), ("G", 2), ("Am", 2)], "verse", "folk", {"53231323 (8分)", "folk D-DU"}, "主歌民谣4-2-2"),
 ]
 
 
@@ -114,11 +116,12 @@ class TestGridAlignment:
             RhythmGrid((Stroke("D"), Stroke("U"), Stroke("D")))  # 3 格
 
     def test_pattern_post_init_rejects_bad_unit(self):
-        """StrumPattern 要求 grid_1beat 恰 4 格。"""
+        """StrumPattern 要求 grid_motif 长度 = 4 * motif_beats。"""
         with pytest.raises(ValueError):
             StrumPattern(
                 name="bad",
-                grid_1beat=(Stroke("D"),),
+                grid_motif=(Stroke("D"),),  # motif_beats=1 应为 4 格
+                motif_beats=1,
                 min_beats=1,
                 ideal_beats=(1,),
                 sections=("verse",),
@@ -170,15 +173,91 @@ class TestTemplateLibrary:
         assert len(STRUM_PATTERNS) >= 4
 
     def test_all_patterns_have_consistent_metadata(self):
-        """每个模板元数据齐全：grid_1beat 恰 4 格，min_beats>=1，sections 非空。"""
+        """每个模板元数据齐全：grid_motif = 4*motif_beats 格，min_beats>=motif_beats，sections 非空，technique 与栅格内容一致。"""
         for p in STRUM_PATTERNS:
-            assert len(p.grid_1beat) == 4
-            assert p.min_beats >= 1
+            assert len(p.grid_motif) == 4 * p.motif_beats, (
+                f"{p.name}: grid_motif 长度 {len(p.grid_motif)} != 4*{p.motif_beats}"
+            )
+            assert p.min_beats >= p.motif_beats
             assert len(p.sections) > 0
             assert p.style in {"folk", "pop", "rock"}
+            assert p.technique in {"strum", "arpeggio"}
+            # technique 与栅格内容一致：arpeggio 含 Pluck，strum 不含。
+            has_pluck = any(c is not None and not isinstance(c, Stroke) for c in p.grid_motif)
+            assert has_pluck == p.is_arpeggio, (
+                f"{p.name}: technique={p.technique} 与栅格内容(含Pluck={has_pluck})不一致"
+            )
 
     def test_boom_chick_is_fallback(self):
         """boom-chick 作为兜底模板存在（min_beats=1）。"""
         bc = [p for p in STRUM_PATTERNS if p.name == "boom-chick"]
         assert len(bc) == 1
         assert bc[0].min_beats == 1
+
+
+class TestMotifTiling:
+    """动机平铺/截断测试：grid_for 在整数倍时平铺、非整数倍时取前缀截断。"""
+
+    def test_integer_multiple_tiles_full_motif(self):
+        """beats 是 motif_beats 整数倍时，平铺完整动机。"""
+        # pop 8th-notes: motif 1 拍 (D,U,D,U)，占 4 拍应平铺 4 遍。
+        p = next(p for p in STRUM_PATTERNS if p.name == "pop 8th-notes")
+        grid = p.grid_for(4)
+        assert grid.cells == p.grid_motif * 4
+        assert len(grid.cells) == 16
+
+    def test_non_integer_multiple_truncates(self):
+        """beats 非整数倍时，平铺整数份动机 + 末尾取动机前缀截断。"""
+        # folk D-DU: motif 2 拍 (8 格)，占 3 拍 = 12 格：1 份完整动机 (8) + 动机前 4 格前缀。
+        p = next(p for p in STRUM_PATTERNS if p.name == "folk D-DU")
+        assert p.motif_beats == 2
+        grid = p.grid_for(3)
+        assert len(grid.cells) == 12  # 3 拍 = 12 格
+        assert grid.cells == p.grid_motif + p.grid_motif[:4]  # 整动机 + 前缀截断
+
+    def test_beats_shorter_than_motif_takes_prefix(self):
+        """beats 短于动机时，取动机前缀（截断到不足一个动机）。"""
+        # pop D-DU-U-DU: motif 4 拍 (16 格)，占 1 拍取前 4 格。
+        p = next(p for p in STRUM_PATTERNS if p.name == "pop D-DU-U-DU")
+        grid = p.grid_for(1)
+        assert len(grid.cells) == 4
+        assert grid.cells == p.grid_motif[:4]
+
+    def test_grid_length_always_four_times_beats(self):
+        """任意拍数栅格长度恒为 4*beats，无论是否整数倍平铺。"""
+        p = next(p for p in STRUM_PATTERNS if p.name == "53231323 (8分)")
+        assert p.motif_beats == 4
+        for beats in (4, 5, 6, 7, 8):
+            grid = p.grid_for(beats)
+            assert len(grid.cells) == 4 * beats
+            assert grid.n_beats == beats
+
+
+class TestTechniqueBaseline:
+    """技法基线（段落级混排）测试。"""
+
+    def _names(self, gtr, base):
+        ev = enumerate_rhythm_patterns(
+            [("C", 4), ("G", 2), ("Am", 2)], gtr,
+            section="verse", style="folk", technique_baseline=base,
+        )
+        return [e.pattern.name for e in ev]
+
+    def test_arpeggio_baseline_picks_arpeggio(self, guitar):
+        """arpeggio 基线把和弦压向分解模板。"""
+        arp = {p.name for p in STRUM_PATTERNS if p.is_arpeggio}
+        for n in self._names(guitar, "arpeggio"):
+            assert n in arp, f"arpeggio 基线应选分解，实际含 {n}"
+
+    def test_strum_baseline_picks_strum(self, guitar):
+        """strum 基线把和弦压向扫弦模板。"""
+        strum = {p.name for p in STRUM_PATTERNS if p.is_strum}
+        for n in self._names(guitar, "strum"):
+            assert n in strum, f"strum 基线应选扫弦，实际含 {n}"
+
+    def test_mixed_and_none_do_not_force_technique(self, guitar):
+        """mixed / None 不强制技法，允许扫拆混排（不强求全扫或全拆）。"""
+        # 只要能产出结果即可--mixed/None 的语义是不干预，选型器自由选。
+        for base in ("mixed", None):
+            names = self._names(guitar, base)
+            assert len(names) == 3, f"{base} 基线应返回 3 个事件"

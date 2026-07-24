@@ -14,9 +14,13 @@
 4. **技法基线**（段落级）：musicnn 给出的「该段落该扫还是该拆」倾向。基线为
    ``"arpeggio"`` 时扫弦模板罚分、为 ``"strum"`` 时分解模板罚分；``"mixed"`` /
    ``None`` 不罚，让密度/段落契合自己选。这是段落级混排的关键维度。
-5. **扫弦可行性**（轻量，复用 ``chord_fingering.count_muted``）：取该和弦首选
+5. **整动机奖励**：``beats`` 恰等于 ``motif_beats`` 且 ``ideal_beats`` 是单元素
+   ``(motif_beats,)`` 的专属整动机模板减分。占满一个专属动机时最顺，奖励压住高密度
+   通用短动机的密度优势。只在「占满一个专属动机」触发，不泛化到任意整数倍，避免长动机
+   跨技法倾斜。
+6. **扫弦可行性**（轻量，复用 ``chord_fingering.count_muted``）：取该和弦首选
    voicing 的闷弦结构，全扫模板配高音侧闷音（丢顶音）或内部闷音（扫弦要精确挡）时罚分。
-6. **进行级连贯性**：相邻和弦拍数变化时（4->1 收束、1->4 展开），密度方向一致的模板减分。
+7. **进行级连贯性**：相邻和弦拍数变化时（4->1 收束、1->4 展开），密度方向一致的模板减分。
 """
 
 from __future__ import annotations
@@ -52,10 +56,12 @@ REST: Cell | None = None
 
 
 STRUM_PATTERNS: list[StrumPattern] = [
+    # ── 扫弦模板 ──────────────────────────────────────────────
     StrumPattern(
         name="boom-chick",
-        # 1 拍：下扫（根音区）-休止-休止-休止。最简的根-拍交替，民谣/乡村骨架。
-        grid_1beat=(D, REST, REST, REST),
+        # 1 拍动机：下扫（根音区）-休止-休止-休止。最简的根-拍交替，民谣/乡村骨架。
+        grid_motif=(D, REST, REST, REST),
+        motif_beats=1,
         min_beats=1,
         ideal_beats=(2, 4),
         sections=("verse",),
@@ -63,10 +69,9 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="folk D-DU",
-        # 2 拍一个完整周期：第 1 拍「下 休 休 休」，第 2 拍「下 休 上 休」。
-        # 用基本单元表达时，第 2 拍的单元才含上扫；这里用「下-上」1 拍单元近似，
-        # 占 2 拍时自然拼成 D.DU.DU，占 1 拍时退化为单拍下-上。
-        grid_1beat=(D, REST, U, REST),
+        # 2 拍动机：第 1 拍「下 休 休 休」，第 2 拍「下 休 上 休」。完整 D.DU 周期。
+        grid_motif=(D, REST, REST, REST, D, REST, U, REST),
+        motif_beats=2,
         min_beats=2,
         ideal_beats=(2, 4),
         sections=("verse", "prechorus"),
@@ -74,8 +79,9 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="pop 8th-notes",
-        # 1 拍：下-上 8 分音符交替，流行副歌最常见。
-        grid_1beat=(D, U, D, U),
+        # 1 拍动机：下-上 8 分音符交替，流行副歌最常见。
+        grid_motif=(D, U, D, U),
+        motif_beats=1,
         min_beats=1,
         ideal_beats=(1, 2, 4),
         sections=("chorus", "prechorus"),
@@ -83,8 +89,9 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="rock 8th down",
-        # 1 拍：下-休-下-休，全下扫重拍，摇滚 power 思路。
-        grid_1beat=(D, REST, D, REST),
+        # 1 拍动机：下-休-下-休，全下扫重拍，摇滚 power 思路。
+        grid_motif=(D, REST, D, REST),
+        motif_beats=1,
         min_beats=1,
         ideal_beats=(1, 2, 4),
         sections=("chorus",),
@@ -92,30 +99,87 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="pop D-DU-U-DU",
-        # 经典 4/4 流行扫弦 ↓ ↓↑ ↑ ↓↑：4 拍一个完整周期。
-        # 用「下-下-上」式单元难以在 1 拍内表达完整动机，故 min_beats=4，
-        # 仅占 4 拍的和弦才候选；基本单元取第 1 拍的「下 休 上 休」，
-        # 占 4 拍时平铺四遍近似经典动机的节奏重音。
-        grid_1beat=(D, REST, U, REST),
+        # 经典 4/4 流行扫弦 ↓ ↓↑ ↑ ↓↑：4 拍一个完整周期动机。
+        # 每拍第 1 个 16 分为强拍下扫，弱拍加下扫/上扫回扫，构成「下 下上 上 下上」。
+        grid_motif=(
+            D, REST, REST, REST,   # 1 拍：下
+            D, REST, U, REST,      # 2 拍：下-上
+            U, REST, REST, REST,   # 3 拍：上
+            D, REST, U, REST,      # 4 拍：下-上
+        ),
+        motif_beats=4,
         min_beats=4,
         ideal_beats=(4,),
         sections=("chorus",),
         style="pop",
     ),
     StrumPattern(
+        name="D-D-DU (1拍16分)",
+        # 「下 下下上」1 拍 16 分版：4 个动作挤在一拍内，节奏紧凑、推动力强，
+        # 常作副歌收束或过门。区别于 pop 8th-notes 的均匀 DUDU，这里第二拍密度更高。
+        grid_motif=(D, D, D, U),
+        motif_beats=1,
+        min_beats=1,
+        ideal_beats=(1, 2),
+        sections=("chorus", "prechorus"),
+        style="pop",
+    ),
+    StrumPattern(
         name="reggae off-beat",
-        # 1 拍：休-上-休-休，反拍上扫，雷鬼/Ska 慢扫。
-        grid_1beat=(REST, U, REST, REST),
+        # 1 拍动机：休-上-休-休，反拍上扫，雷鬼/Ska 慢扫。
+        grid_motif=(REST, U, REST, REST),
+        motif_beats=1,
         min_beats=1,
         ideal_beats=(1, 2),
         sections=("chorus", "bridge"),
         style="rock",
     ),
+    # ── 分解模板（占位 Pluck，暂不指定弦序）────────────────────
+    StrumPattern(
+        name="53231323 (16分)",
+        # 经典民谣分解指法 5-3-2-3-1-3-2-3，8 个音各占 1 个 16 分位置 = 2 拍动机。
+        # Pluck 暂用占位 strings=None，仅表达「这一格拨一弦」的节奏骨架；
+        # 弦序信息（5,3,2,3,1,3,2,3）待 Pluck.strings 字段落实后回填。
+        grid_motif=(P, P, P, P, P, P, P, P),
+        motif_beats=2,
+        min_beats=2,
+        ideal_beats=(2, 4),
+        sections=("verse", "prechorus", "bridge"),
+        style="folk",
+        technique="arpeggio",
+    ),
+    StrumPattern(
+        name="53231323 (8分)",
+        # 同一指法 5-3-2-3-1-3-2-3 的 8 分版：8 个音各占 2 个 16 分位置 = 4 拍动机。
+        # 比 16 分版舒缓，适合慢板抒情段落。每个 Pluck 后跟一个 REST 占住 8 分时值。
+        grid_motif=(
+            P, REST, P, REST, P, REST, P, REST,
+            P, REST, P, REST, P, REST, P, REST,
+        ),
+        motif_beats=4,
+        min_beats=4,
+        ideal_beats=(4,),
+        sections=("verse", "bridge"),
+        style="folk",
+        technique="arpeggio",
+    ),
+    StrumPattern(
+        name="5323 (8分)",
+        # 53231323 的前半截 5-3-2-3，4 个音各占 8 分 = 1 拍动机，循环两遍即 5323-5323。
+        # 适合拍数不定的短和弦或快段落的分解。
+        grid_motif=(P, REST, P, REST),
+        motif_beats=1,
+        min_beats=1,
+        ideal_beats=(1, 2, 4),
+        sections=("verse", "prechorus"),
+        style="folk",
+        technique="arpeggio",
+    ),
     StrumPattern(
         name="arpeggio placeholder",
-        # 占位分解模板：1 拍拨一根弦-休-休-休。具体拨哪根弦、什么顺序待定，
-        # 此处只占住「分解技法」的席位，供技法基线罚分维度与混排选型验证用。
-        grid_1beat=(P, REST, REST, REST),
+        # 最简占位分解：1 拍拨一弦-休-休-休。密度最低的分解骨架，兼作技法基线测试用。
+        grid_motif=(P, REST, REST, REST),
+        motif_beats=1,
         min_beats=1,
         ideal_beats=(2, 4),
         sections=("verse", "prechorus", "bridge"),
@@ -130,6 +194,10 @@ STRUM_PATTERNS: list[StrumPattern] = [
 W_SECTION = 2.5        # 段落不契合：当前段落不在模板 sections 里时的固定罚分
 W_DENSITY = 4.0        # 每偏离目标密度 1.0 的代价（密度差 0..1，故实际惩罚 0..4）
 W_IDEAL_BEATS = 1.5    # 拍数不在 ideal_beats 里时的罚分（鼓励「占几拍就用几拍周期」的模板）
+W_WHOLE_MOTIF = 2.0    # 整动机奖励：beats 恰等于 motif_beats 且 ideal_beats 是单元素 (motif_beats,)
+                       # 的模板减分。这类「专属整动机」（如 4 拍周期的 pop D-DU-U-DU、4 拍 53231323
+                       # 8 分分解）占满正好一个动机时最顺，奖励压住高密度通用短动机的密度优势。
+                       # 只在「占满一个专属动机」时触发，不泛化到任意整数倍，避免跨技法倾斜。
 W_STRUM_MUTED = 1.2    # 扫弦可行性：高音侧闷音（丢顶音）每个的罚分
 W_INNER_MUTE = 1.0     # 扫弦可行性：内部闷音（扫弦要精确挡）每个的罚分
 W_STYLE_MISMATCH = 5.0 # 风格不匹配：模板风格 != 请求风格时的固定罚分（不剔除，仅降级）
@@ -210,6 +278,17 @@ def pattern_cost(
     # 拍数理想区间：占几拍就用几拍周期的模板最顺。
     if beats not in pattern.ideal_beats:
         cost += W_IDEAL_BEATS
+
+    # 整动机奖励：beats 恰等于 motif_beats，且 ideal_beats 是单元素 (motif_beats,) 的
+    # 「专属整动机」模板减分。这类模板（4 拍 pop D-DU-U-DU、4 拍 53231323 8分分解等）
+    # 占满正好一个动机时最顺，奖励压住高密度通用短动机的密度优势。只在「占满一个专属动机」
+    # 时触发，不泛化到任意整数倍，避免长动机在多拍段落跨技法倾斜。
+    if (
+        beats == pattern.motif_beats
+        and len(pattern.ideal_beats) == 1
+        and pattern.ideal_beats[0] == pattern.motif_beats
+    ):
+        cost -= W_WHOLE_MOTIF
 
     # 扫弦可行性：全扫模板（密度高）配丢顶音/内部闷音的 voicing 时罚分。
     # 闷掉顶音的扫弦听起来「塌」，内部闷音扫弦要靠指腹精确挡、实战少用。

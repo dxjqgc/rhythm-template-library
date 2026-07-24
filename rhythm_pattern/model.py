@@ -12,8 +12,10 @@
   在同一栅格里（段落级混排）。
 - ``None``    - 休止，该 16 分位置不发声。
 
-一个节奏型模板以「1 拍基本单元」（4 格）存储，选型时按和弦拍数平铺成完整栅格。
-天然 2 拍或 4 拍一个周期的模板，靠 ``min_beats`` 直接卡掉拍数不够的和弦。
+一个节奏型模板以「完整动机」（``grid_motif``，跨 ``motif_beats`` 拍）存储，选型时按
+和弦拍数平铺/截断成完整栅格。动机可跨 1/2/4 拍--1 拍动机（4 格）对扫弦小单元够用，
+2 拍动机（8 格）表达 53231323 这类 8 音分解，4 拍动机（16 格）表达 pop D-DU-U-DU 完整周期。
+占拍数不够 ``min_beats`` 的模板由拍数门槛一票否决。
 """
 
 from __future__ import annotations
@@ -116,21 +118,28 @@ class StrumPattern:
     两种技法模板，靠 ``technique`` 字段区分。混排场景下扫弦模板和分解模板进同一个
     选型器排序，musicnn 给出的段落技法倾向作为罚分项把不合基线的模板往后压。
 
-    模板以「1 拍基本单元」（4 格）存储，选型时按和弦实际拍数 ``beats`` 平铺成
-    ``beats`` 个基本单元拼接的完整栅格。天然是 2/4 拍一个周期的模板把
-    ``min_beats`` 设为 2，占 1 拍的和弦会直接被拍数门槛剔除。
+    模板以「完整动机」（``grid_motif``，跨 ``motif_beats`` 拍）存储，选型时按和弦
+    实际拍数 ``beats`` 平铺/截断成 4*beats 格的栅格。``motif_beats`` 是动机的天然
+    周期：1 拍动机（4 格）对 boom-chick/pop 8th 这类够用；2 拍动机（8 格）能表达
+    53231323 这类 8 个音的分解；4 拍动机（16 格）表达 pop D-DU-U-DU 的完整周期。
+    这比原来「一律 1 拍单元 + min_beats 卡门槛」更贴合分解与多拍扫弦的真实形态。
 
     Attributes
     ----------
     name
         人类可读名称，如 ``"pop D-DU-U-DU"``。
-    grid_1beat
-        1 拍基本单元，恰好 4 格。选型时按和弦拍数平铺。格内可为 ``Stroke``（扫弦）、
-        ``Pluck``（拨弦）或 ``None``（休止）。
+    grid_motif
+        完整动机栅格，长度 = ``4 * motif_beats``（每拍 4 个 16 分位置）。选型时按
+        和弦拍数平铺/截断。格内可为 ``Stroke``（扫弦）、``Pluck``（拨弦）或 ``None``。
+    motif_beats
+        动机跨多少拍，决定 ``grid_motif`` 的长度（``4 * motif_beats`` 格）。也是
+        平铺的周期单位。占拍数不是 ``motif_beats`` 整数倍时取动机前缀截断。
     min_beats
-        占拍数门槛：和弦拍数小于此值的模板不适用（一票否决）。
+        占拍数门槛：和弦拍数小于此值的模板不适用（一票否决）。通常 ``>= motif_beats``，
+        但可设更大（如 4 拍动机要求占满 4 拍才用）。
     ideal_beats
-        最佳拍数区间，命中时排序加分（一个和弦占 4 拍时，4 拍周期的模板最顺）。
+        最佳拍数区间，命中时排序加分。手填，与 ``motif_beats`` 互补：后者管周期对齐，
+        前者管「这个模板特别偏好某拍数」的微调。
     sections
         适用段落标签，``{"verse","chorus","prechorus","bridge","outro"}`` 的子集。
     style
@@ -141,7 +150,8 @@ class StrumPattern:
     """
 
     name: str
-    grid_1beat: tuple[Cell, ...]
+    grid_motif: tuple[Cell, ...]
+    motif_beats: int
     min_beats: int
     ideal_beats: tuple[int, ...]
     sections: tuple[str, ...]
@@ -149,21 +159,28 @@ class StrumPattern:
     technique: Literal["strum", "arpeggio"] = "strum"
 
     def __post_init__(self) -> None:
-        if len(self.grid_1beat) != 4:
+        expected = 4 * self.motif_beats
+        if len(self.grid_motif) != expected:
             raise ValueError(
-                f"grid_1beat 必须恰为 4 格（1 拍），实际 {len(self.grid_1beat)}"
+                f"grid_motif 长度应为 4 * motif_beats = {expected} 格，"
+                f"实际 {len(self.grid_motif)}"
             )
-        if self.min_beats < 1:
-            raise ValueError("min_beats 至少为 1")
+        if self.motif_beats < 1:
+            raise ValueError("motif_beats 至少为 1")
+        if self.min_beats < self.motif_beats:
+            raise ValueError(
+                f"min_beats ({self.min_beats}) 不应小于 motif_beats "
+                f"({self.motif_beats})--动机自身就跨这么多拍"
+            )
         # 技法与栅格内容一致性：arpeggio 模板至少含一个 Pluck，strum 模板不得含 Pluck。
-        has_pluck = any(isinstance(c, Pluck) for c in self.grid_1beat)
+        has_pluck = any(isinstance(c, Pluck) for c in self.grid_motif)
         if self.technique == "arpeggio" and not has_pluck:
             raise ValueError(
-                f"分解模板 {self.name} 的 grid_1beat 必须含至少一个 Pluck"
+                f"分解模板 {self.name} 的 grid_motif 必须含至少一个 Pluck"
             )
         if self.technique == "strum" and has_pluck:
             raise ValueError(
-                f"扫弦模板 {self.name} 的 grid_1beat 不得含 Pluck（应全为 Stroke/None）"
+                f"扫弦模板 {self.name} 的 grid_motif 不得含 Pluck（应全为 Stroke/None）"
             )
 
     @property
@@ -177,19 +194,31 @@ class StrumPattern:
         return self.technique == "arpeggio"
 
     def grid_for(self, beats: int) -> RhythmGrid:
-        """把 1 拍基本单元平铺成 ``beats`` 拍的完整栅格。
+        """把动机平铺/截断成 ``beats`` 拍的完整栅格（``4 * beats`` 格）。
 
-        ``beats < min_beats`` 时调用方应已通过拍数门槛剔除；此处不重复检查，
-        只做平铺，保证任意正整数拍都能生成确定长度的栅格。
+        ``beats < min_beats`` 时调用方应已通过拍数门槛剔除；此处不重复检查。
+        平铺规则：
+
+        - ``beats`` 是 ``motif_beats`` 的整数倍 -> 完整动机重复 ``beats // motif_beats`` 遍；
+        - 非整数倍 -> 取动机前缀截断到 ``4 * beats`` 格（如 2 拍动机用在 3 拍和弦上，
+          取动机前 3 拍）。保证任意正整数拍都有确定输出，整数倍时退化为干净平铺。
         """
         if beats < 1:
             raise ValueError(f"拍数必须为正整数，实际 {beats}")
-        cells = self.grid_1beat * beats
+        need = 4 * beats
+        if need <= len(self.grid_motif):
+            # 和弦短于或等于动机：取动机前缀。
+            cells = self.grid_motif[:need]
+        else:
+            # 和弦长于动机：整数倍平铺 + 末尾不足一动机的前缀截断。
+            full_copies = need // len(self.grid_motif)
+            remainder = need % len(self.grid_motif)
+            cells = self.grid_motif * full_copies + self.grid_motif[:remainder]
         return RhythmGrid(cells)
 
     def density(self) -> float:
-        """基本单元的密度（平铺后密度不变，直接取基本单元算）。"""
-        return RhythmGrid(self.grid_1beat).density
+        """基本动机的密度（平铺后密度不变，直接取动机算）。"""
+        return RhythmGrid(self.grid_motif).density
 
 
 @dataclass(frozen=True)
