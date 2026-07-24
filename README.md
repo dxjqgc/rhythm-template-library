@@ -21,7 +21,7 @@ uv sync
 ## 快速开始
 
 ```python
-from fingering_enumerator import enumerate_fingerings
+from chord_fingering import enumerate_fingerings
 from pytheory import Fretboard
 
 gtr = Fretboard.guitar()
@@ -74,22 +74,26 @@ custom = Fretboard.guitar(tuning=("C4", "G3", "D3", "A2"))  # 完全自定义
 ## 项目结构
 
 ```
-fingering_enumerator.py  # 枚举器：笛卡尔积搜索 + 物理剪枝 + 排序
-playability.py           # 可演奏性模型：手指分配 (硬约束) + 连续代价 (评分)
+chord_fingering/         # 和弦指法枚举子包
+  __init__.py            # 公开 API 入口
+  fingering_enumerator.py  # 枚举器：笛卡尔积搜索 + 物理剪枝 + 排序
+  playability.py         # 可演奏性模型：手指分配 (硬约束) + 连续代价 (评分)
 main.py                   # 演示 + 内联断言验证入口
 tests/                    # pytest 测试
 ```
 
+本仓库不止做指法枚举一个功能，`chord_fingering/` 是其中独立封装的一个子包，后续其它功能各成自己的包。
+
 ## 验证
 
-`uv run main.py` 是本仓库的验证方式：每段演示都带 `assert`，断言失败即视为回归。核心回归是 `check_benchmark`——一组吉他教材里人人都会的常用指法（C / G / D / Am / F / C7 / Em7 ...）必须排进前 3 名。改 `fingering_enumerator.py` 或 `playability.py`（尤其调权重）后必须重跑。
+`uv run main.py` 是本仓库的验证方式：每段演示都带 `assert`，断言失败即视为回归。核心回归是 `check_benchmark`——一组吉他教材里人人都会的常用指法（C / G / D / Am / F / C7 / Em7 ...）必须排进前 3 名。改 `chord_fingering/fingering_enumerator.py` 或 `chord_fingering/playability.py`（尤其调权重）后必须重跑。
 
 ```bash
 uv run main.py        # 内联断言验证
 uv run pytest         # 单元测试
 ```
 
-代价权重提在 `playability.py` 顶部常量里，标定依据就是 `main.py` 的基准集。
+代价权重提在 `chord_fingering/playability.py` 顶部常量里，标定依据就是 `main.py` 的基准集。
 
 ## 依赖
 

@@ -5,7 +5,7 @@
 """
 
 import pytest
-from fingering_enumerator import (
+from chord_fingering import (
     analyze_barre,
     enumerate_fingerings,
     is_redundant_thumb,
@@ -82,10 +82,16 @@ class TestCMajorDiatonicChords:
 
     @pytest.mark.parametrize("symbol, root_midi, _, tag", DIATONIC_CHORDS)
     def test_fingerings_sorted_by_rank(self, guitar, symbol, root_midi, _, tag):
-        """验证指法按 rank_key 升序排列（原位>转位、把位低>高）。"""
+        """legacy 排序下指法按 rank_key 升序排列（原位>转位、把位低>高）。
+
+        ``enumerate_fingerings`` 默认 ``ranking="playable"``（按可演奏性代价排序），
+        不保证 ``rank_key`` 单调；这里显式切到 ``"legacy"`` 验证 ``rank_key`` 分层排序。
+        """
         chord = Chord.from_symbol(symbol)
         root_pc = chord.root.midi % 12
-        all_f = enumerate_fingerings(symbol, guitar, max_fret=7, max_stretch=4)
+        all_f = enumerate_fingerings(
+            symbol, guitar, max_fret=7, max_stretch=4, ranking="legacy"
+        )
         if len(all_f) < 2:
             pytest.skip(f"{symbol} ({tag}) 只有 {len(all_f)} 个指法，跳过排序测试。")
         for i in range(len(all_f) - 1):

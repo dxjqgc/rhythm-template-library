@@ -5,8 +5,7 @@
 （尤其是调权重）后必须跑一遍。
 """
 
-from fingering_enumerator import analyze_barre, enumerate_fingerings, is_redundant_thumb
-from playability import plan_fingers, playability_cost, required_pitch_classes
+from chord_fingering import analyze_barre, enumerate_fingerings, is_redundant_thumb, plan_fingers, playability_cost, required_pitch_classes
 from pytheory import Chord, Fretboard
 
 
