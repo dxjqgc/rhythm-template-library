@@ -11,19 +11,22 @@
 1. **拍数可行性**（硬约束）：``chord_beats < pattern.min_beats`` -> 直接剔除。
 2. **段落契合**：当前段落不在 ``pattern.sections`` 里则额外罚分。
 3. **密度贴合**：模板密度与该段落 + 和弦位置的目标密度之差。
-4. **扫弦可行性**（轻量，复用 ``chord_fingering.count_muted``）：取该和弦首选
+4. **技法基线**（段落级）：musicnn 给出的「该段落该扫还是该拆」倾向。基线为
+   ``"arpeggio"`` 时扫弦模板罚分、为 ``"strum"`` 时分解模板罚分；``"mixed"`` /
+   ``None`` 不罚，让密度/段落契合自己选。这是段落级混排的关键维度。
+5. **扫弦可行性**（轻量，复用 ``chord_fingering.count_muted``）：取该和弦首选
    voicing 的闷弦结构，全扫模板配高音侧闷音（丢顶音）或内部闷音（扫弦要精确挡）时罚分。
-5. **进行级连贯性**：相邻和弦拍数变化时（4->1 收束、1->4 展开），密度方向一致的模板减分。
+6. **进行级连贯性**：相邻和弦拍数变化时（4->1 收束、1->4 展开），密度方向一致的模板减分。
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from chord_fingering import count_muted, enumerate_fingerings
 
-from .model import RhythmEvent, RhythmGrid, Stroke, StrumPattern
+from .model import Cell, Pluck, RhythmEvent, RhythmGrid, Stroke, StrumPattern
 
 if TYPE_CHECKING:
     from pytheory import Fretboard
@@ -32,11 +35,20 @@ if TYPE_CHECKING:
 __all__ = ["STRUM_PATTERNS", "enumerate_rhythm_patterns", "pattern_cost"]
 
 
+# 段落技法基线：musicnn 的整段标签经规则引擎推出，逐段落给选型器提供「该扫还是该拆」倾向。
+# - "strum"     倾向全程扫弦（燥/快/摇滚类）；
+# - "arpeggio"  倾向全程分解（柔/慢/抒情类）；
+# - "mixed"     主歌拆副歌扫之类的混排，不在此层罚分，交由密度/段落契合自选；
+# - None        未提供基线（musicnn 未接），选型器退回纯密度行为。
+TechniqueBaseline = Literal["strum", "arpeggio", "mixed"] | None
+
+
 # --- 模板库 ---------------------------------------------------------------
 
 D = Stroke("D")
 U = Stroke("U")
-REST: Stroke | None = None
+P = Pluck()  # 占位拨弦：暂不指定弦，仅占住「这一格是个拨弦发音」的语义。
+REST: Cell | None = None
 
 
 STRUM_PATTERNS: list[StrumPattern] = [
@@ -99,6 +111,17 @@ STRUM_PATTERNS: list[StrumPattern] = [
         sections=("chorus", "bridge"),
         style="rock",
     ),
+    StrumPattern(
+        name="arpeggio placeholder",
+        # 占位分解模板：1 拍拨一根弦-休-休-休。具体拨哪根弦、什么顺序待定，
+        # 此处只占住「分解技法」的席位，供技法基线罚分维度与混排选型验证用。
+        grid_1beat=(P, REST, REST, REST),
+        min_beats=1,
+        ideal_beats=(2, 4),
+        sections=("verse", "prechorus", "bridge"),
+        style="folk",
+        technique="arpeggio",
+    ),
 ]
 
 
@@ -110,6 +133,7 @@ W_IDEAL_BEATS = 1.5    # 拍数不在 ideal_beats 里时的罚分（鼓励「占
 W_STRUM_MUTED = 1.2    # 扫弦可行性：高音侧闷音（丢顶音）每个的罚分
 W_INNER_MUTE = 1.0     # 扫弦可行性：内部闷音（扫弦要精确挡）每个的罚分
 W_STYLE_MISMATCH = 5.0 # 风格不匹配：模板风格 != 请求风格时的固定罚分（不剔除，仅降级）
+W_TECHNIQUE = 6.0      # 技法基线不符：段落技法基线与模板技法不一致时的固定罚分（段落级混排关键维度）
 W_COHERENCE = 0.8      # 连贯性：与相邻和弦密度变化方向不一致时的罚分
 
 
@@ -137,13 +161,14 @@ def pattern_cost(
     style: str,
     muted: tuple[int, int, int],
     density_neighbor_delta: float | None,
+    technique_baseline: TechniqueBaseline = None,
 ) -> float:
     """给一个候选模板打连续代价分，越小越靠前。
 
     Parameters
     ----------
     pattern
-        候选扫弦模板。
+        候选节奏型模板（扫弦或分解）。
     beats
         该和弦占多少拍。
     section
@@ -156,6 +181,10 @@ def pattern_cost(
     density_neighbor_delta
         相邻和弦目标密度之差（后一个减前一个），正值=乐句在展开（密度上升），
         负值=在收束（密度下降），``None`` 表示无相邻参照（进行首尾或单和弦）。
+    technique_baseline
+        段落技法基线，``"strum" / "arpeggio" / "mixed" / None``。musicnn 的整段
+        标签经规则引擎逐段落推出。基线明确（``strum``/``arpeggio``）时，技法不符的
+        模板罚 ``W_TECHNIQUE``；``mixed`` / ``None`` 不罚，交由密度/段落契合自选。
     """
     cost = 0.0
 
@@ -167,6 +196,13 @@ def pattern_cost(
     if pattern.style != style:
         cost += W_STYLE_MISMATCH
 
+    # 技法基线（段落级混排关键维度）：基线明确时，技法不符的模板罚分。
+    # 不剔除--允许在基线为 strum 时仍选出分解（若它密度/段落契合远胜），只压低顺位。
+    if technique_baseline == "arpeggio" and pattern.is_strum:
+        cost += W_TECHNIQUE
+    elif technique_baseline == "strum" and pattern.is_arpeggio:
+        cost += W_TECHNIQUE
+
     # 密度贴合。
     target = _target_density(section, beats)
     cost += abs(pattern.density() - target) * W_DENSITY
@@ -177,11 +213,13 @@ def pattern_cost(
 
     # 扫弦可行性：全扫模板（密度高）配丢顶音/内部闷音的 voicing 时罚分。
     # 闷掉顶音的扫弦听起来「塌」，内部闷音扫弦要靠指腹精确挡、实战少用。
-    inner, _low, high = muted
-    density = pattern.density()
-    # 密度越高越依赖「全扫」，对闷音越敏感。
-    cost += high * W_STRUM_MUTED * density
-    cost += inner * W_INNER_MUTE * density
+    # 仅对扫弦模板生效--分解模板逐弦拨，闷音结构不构成同样的「塌」问题。
+    if pattern.is_strum:
+        inner, _low, high = muted
+        density = pattern.density()
+        # 密度越高越依赖「全扫」，对闷音越敏感。
+        cost += high * W_STRUM_MUTED * density
+        cost += inner * W_INNER_MUTE * density
 
     # 进行级连贯性：相邻拍数变化时，鼓励密度同向移动。
     if density_neighbor_delta is not None and density_neighbor_delta != 0:
@@ -220,10 +258,11 @@ def enumerate_rhythm_patterns(
     *,
     section: str = "chorus",
     style: str = "pop",
+    technique_baseline: TechniqueBaseline = None,
     max_stretch: int = 4,
     limit: int | None = None,
 ) -> list[RhythmEvent]:
-    """对一段和弦进行，为每个和弦选出一个扫弦节奏型，按可演奏性/贴合度排序。
+    """对一段和弦进行，为每个和弦选出一个节奏型（扫弦或分解），按可演奏性/贴合度排序。
 
     Parameters
     ----------
@@ -236,6 +275,10 @@ def enumerate_rhythm_patterns(
         驱动目标密度与段落契合度。
     style
         请求风格，``"folk" / "pop" / "rock"`` 之一。风格不匹配的模板不剔除、只降级。
+    technique_baseline
+        段落技法基线，``"strum" / "arpeggio" / "mixed" / None``。musicnn 的整段标签经
+        规则引擎推出，逐调用传入。基线明确时，技法不符的模板罚 ``W_TECHNIQUE``；
+        ``mixed`` / ``None``（默认）不罚，选型器退回纯密度行为。段落级混排的关键维度。
     max_stretch
         取首选指法时的最大跨度约束，透传给 :func:`chord_fingering.enumerate_fingerings`。
     limit
@@ -276,6 +319,7 @@ def enumerate_rhythm_patterns(
                 style=style,
                 muted=muted[i],
                 density_neighbor_delta=neighbor_delta,
+                technique_baseline=technique_baseline,
             )
             scored.append((cost, pattern))
 

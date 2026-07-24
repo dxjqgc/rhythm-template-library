@@ -116,6 +116,42 @@ def check_progression_continuity(gtr) -> None:
     print("  断言通过: 主歌进行不混入副歌专用模板")
 
 
+def check_technique_baseline(gtr) -> None:
+    """技法基线（段落级混排）：musicnn 推出的段落技法倾向驱动扫/拆切换。
+
+    同一段主歌民谣进行，``technique_baseline="arpeggio"`` 应把所有和弦切到分解模板，
+    ``"strum"`` / ``"mixed"`` / ``None`` 则保持扫弦模板。``W_TECHNIQUE`` 罚分足够大，
+    能压过密度/段落契合的小差异，实现段落级「整段扫 vs 整段拆」的切换。
+    """
+    print("\n=== 技法基线（段落级混排）===")
+    prog = [("C", 4), ("G", 2), ("Am", 2)]
+
+    def _names(base):
+        ev = enumerate_rhythm_patterns(
+            prog, gtr, section="verse", style="folk", technique_baseline=base
+        )
+        return [e.pattern.name for e in ev]
+
+    # arpeggio 基线：整段切分解。
+    arp_names = _names("arpeggio")
+    arp_patterns = {p.name for p in STRUM_PATTERNS if p.is_arpeggio}
+    assert all(n in arp_patterns for n in arp_names), (
+        f"arpeggio 基线应整段选分解模板，实际 {arp_names}"
+    )
+
+    # strum / mixed / None 基线：保持扫弦，不选分解。
+    for base in ("strum", "mixed", None):
+        names = _names(base)
+        strum_patterns = {p.name for p in STRUM_PATTERNS if p.is_strum}
+        assert all(n in strum_patterns for n in names), (
+            f"{base} 基线应保持扫弦模板，实际 {names}"
+        )
+        print(f"  baseline={base!s:7s} -> {names}")
+
+    print(f"  baseline=arpeggio -> {arp_names}")
+    print("  断言通过: arpeggio 基线切分解；strum/mixed/None 保持扫弦")
+
+
 def main() -> None:
     gtr = Fretboard.guitar()
 
@@ -123,6 +159,7 @@ def main() -> None:
     check_min_beats(gtr)
     check_grid_length(gtr)
     check_progression_continuity(gtr)
+    check_technique_baseline(gtr)
 
     # 展示几段典型进行选出的节奏栅格（不参与断言）。
     _show([("C", 4), ("G", 4), ("Am", 4), ("F", 4)], "chorus", "pop", gtr)

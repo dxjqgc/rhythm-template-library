@@ -13,11 +13,13 @@
     from rhythm_pattern import enumerate_rhythm_patterns, StrumPattern, RhythmGrid
 """
 
-from .model import RhythmEvent, RhythmGrid, Stroke, StrumPattern
+from .model import Cell, Pluck, RhythmEvent, RhythmGrid, Stroke, StrumPattern
 from .strum_patterns import STRUM_PATTERNS, enumerate_rhythm_patterns, pattern_cost
 
 __all__ = [
     "Stroke",
+    "Pluck",
+    "Cell",
     "RhythmGrid",
     "StrumPattern",
     "RhythmEvent",
