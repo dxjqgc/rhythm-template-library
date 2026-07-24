@@ -261,3 +261,86 @@ class TestTechniqueBaseline:
         for base in ("mixed", None):
             names = self._names(guitar, base)
             assert len(names) == 3, f"{base} 基线应返回 3 个事件"
+
+
+class TestStringRoles:
+    """弦角色实例化测试：Pluck.role 按和弦 voicing 解析成具体弦号。"""
+
+    def _voicing(self, gtr, chord):
+        from rhythm_pattern.strum_patterns import _resolve_voicing
+        return _resolve_voicing(chord, gtr, max_stretch=4)
+
+    def _instantiate(self, gtr, pattern, chord, beats):
+        from rhythm_pattern.strum_patterns import _instantiate_plucks
+        v = self._voicing(gtr, chord)
+        return _instantiate_plucks(pattern.grid_for(beats), v)
+
+    @staticmethod
+    def _gtr(ns):
+        """弦号下标 -> 吉他手弦号（0=6弦→6）。"""
+        return tuple(6 - n for n in ns) if ns else None
+
+    def test_root_fifth_top2_adapts_to_chord(self, guitar):
+        """root-5-top2 模板：C 选 21、G 选 32（顶两弦按音距自适应收窄）。"""
+        tpl = next(p for p in STRUM_PATTERNS if "root-5-top2" in p.name)
+        # C: 根音 5 弦、五音 3 弦、顶两弦 2-1。
+        grid_c = self._instantiate(guitar, tpl, "C", 1)
+        plucks_c = [self._gtr(c.strings) for c in grid_c.cells
+                    if isinstance(c, Pluck) and c.strings]
+        assert plucks_c == [(5,), (3,), (2, 1)], f"C 实际 {plucks_c}"
+        # G: 根音 6 弦、五音 4 弦、顶两弦 3-2（根音更低→收窄）。
+        grid_g = self._instantiate(guitar, tpl, "G", 1)
+        plucks_g = [self._gtr(c.strings) for c in grid_g.cells
+                    if isinstance(c, Pluck) and c.strings]
+        assert plucks_g == [(6,), (4,), (3, 2)], f"G 实际 {plucks_g}"
+
+    def test_53231323_restores_classic_fingering_on_C(self, guitar):
+        """53231323 (16分) 在 C 上还原 5-3-2-3-1-3-2-3 弦序。"""
+        tpl = next(p for p in STRUM_PATTERNS if p.name == "53231323 (16分)")
+        grid = self._instantiate(guitar, tpl, "C", 2)
+        seq = [self._gtr(c.strings)[0] for c in grid.cells
+               if isinstance(c, Pluck) and c.strings]
+        assert seq == [5, 3, 2, 3, 1, 3, 2, 3], f"实际 {seq}"
+
+    def test_topn_returns_multiple_strings(self, guitar):
+        """TopN(2) 实例化后 Pluck.strings 长度为 2（一次拨多根弦）。"""
+        from rhythm_pattern import TopN
+        v = self._voicing(guitar, "C")
+        strings = TopN(2).resolve(v)
+        assert strings is not None and len(strings) == 2
+
+    def test_role_resolution_is_tuning_agnostic_via_midi(self, guitar):
+        """角色解析基于音高（midi）而非弦号：root 拨的是最低发音弦，无论哪根。"""
+        from rhythm_pattern import Root
+        v = self._voicing(guitar, "C")
+        root = Root().resolve(v)
+        assert root is not None
+        # root 应是 voicing 里音高最低的发音弦。
+        lowest = min(v.midi, key=lambda sm: sm[1])[0]
+        assert root == (lowest,)
+
+    def test_unresolvable_role_keeps_strings_none(self, guitar):
+        """role 解析失败时（voicing 无该音级），Pluck.strings 保持 None，不阻塞输出。"""
+        from rhythm_pattern import Seventh, Pluck
+        from rhythm_pattern import Seventh
+        from rhythm_pattern.model import RhythmGrid
+        from rhythm_pattern.strum_patterns import _instantiate_plucks
+        # C 大三和弦无七音，Seventh 解析应失败。
+        v = self._voicing(guitar, "C")
+        grid = RhythmGrid((Pluck(role=Seventh()), None, None, None))  # 1 拍 4 格
+        out = _instantiate_plucks(grid, v)
+        pluck = next(c for c in out.cells if isinstance(c, Pluck))
+        assert pluck.strings is None, "七音在 C 大三和弦上解析失败，strings 应为 None"
+
+    def test_instantiate_preserves_strokes_and_rests(self, guitar):
+        """实例化只动 Pluck，Stroke 与 None 格原样保留。"""
+        from rhythm_pattern import Root
+        from rhythm_pattern.model import RhythmGrid, Stroke
+        from rhythm_pattern.strum_patterns import _instantiate_plucks
+        v = self._voicing(guitar, "C")
+        original = RhythmGrid((Stroke("D"), None, Pluck(role=Root()), None))  # 1 拍 4 格
+        out = _instantiate_plucks(original, v)
+        assert out.cells[0] == Stroke("D")
+        assert out.cells[1] is None
+        assert isinstance(out.cells[2], Pluck) and out.cells[2].strings is not None
+        assert out.cells[3] is None

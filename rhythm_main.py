@@ -164,6 +164,51 @@ def check_technique_baseline(gtr) -> None:
     print("  断言通过: arpeggio 切分解；strum 压扫弦；mixed/None 不干预自由选型")
 
 
+def check_string_roles(gtr) -> None:
+    """弦角色实例化：分解模板的 Pluck.role 按和弦 voicing 解析成具体弦号。
+
+    核心回归「5,3,21」：C 和弦根音在 5 弦、顶两弦选 2-1（顶音距合适、丰富）；
+    G 和弦根音在 6 弦更低、顶两弦改选 3-2 收窄顶底音距、避免尖锐。同一套弦角色
+    (Root→Fifth(avoid_bass)→TopN(2,comfortable)) 在不同和弦上解析出不同弦号，
+    证明弦序随和弦走、调弦中立。同时验证 53231323 的音级角色映射。
+    """
+    print("\n=== 弦角色实例化 ===")
+    from rhythm_pattern import Pluck, STRUM_PATTERNS
+    from rhythm_pattern.strum_patterns import _instantiate_plucks, _resolve_voicing
+
+    def gtr_strings(ns):
+        """弦号下标 -> 吉他手习惯弦号（0=6弦 → 6，5=1弦 → 1）。"""
+        return tuple(6 - n for n in ns) if ns else None
+
+    # 直接实例化 root-5-top2 模板（选型器未必选它，但实例化逻辑独立可测）。
+    tpl = next(p for p in STRUM_PATTERNS if "root-5-top2" in p.name)
+    # C: 5,3,21；G: 6,4,32（根音更低→顶两弦收窄）。
+    cases = {"C": (5, 3, (2, 1)), "G": (6, 4, (3, 2))}
+    for chord, (root, fifth, top2) in cases.items():
+        v = _resolve_voicing(chord, gtr, max_stretch=4)
+        grid = _instantiate_plucks(tpl.grid_for(1), v)
+        plucks = [c for c in grid.cells if isinstance(c, Pluck) and c.strings]
+        got = tuple(gtr_strings(c.strings) for c in plucks)
+        # 期望：(根音弦号, 五音弦号, 顶两弦元组)。
+        want = ((root,), (fifth,), top2)
+        assert got == want, (
+            f"{chord} 弦角色实例化: 期望 {want}，实际 {got}"
+        )
+        print(f"  {chord}: Root={root} Fifth={fifth} TopN(2,comfortable)={top2}  OK")
+
+    # 53231323 在 C 上应实例化出 5-3-2-3-1-3-2-3 的弦序（音级角色映射）。
+    tpl5323 = next(p for p in STRUM_PATTERNS if p.name == "53231323 (16分)")
+    v_c = _resolve_voicing("C", gtr, max_stretch=4)
+    grid_c = _instantiate_plucks(tpl5323.grid_for(2), v_c)
+    seq = [gtr_strings(c.strings)[0] for c in grid_c.cells
+           if isinstance(c, Pluck) and c.strings]
+    assert seq == [5, 3, 2, 3, 1, 3, 2, 3], (
+        f"C 上 53231323 弦序应为 [5,3,2,3,1,3,2,3]，实际 {seq}"
+    )
+    print(f"  C: 53231323 -> {seq}  OK (音级角色还原经典指法)")
+    print("  断言通过: 弦角色按 voicing 实例化，C 选 21 / G 选 32 自适应")
+
+
 def main() -> None:
     gtr = Fretboard.guitar()
 
@@ -172,6 +217,7 @@ def main() -> None:
     check_grid_length(gtr)
     check_progression_continuity(gtr)
     check_technique_baseline(gtr)
+    check_string_roles(gtr)
 
     # 展示几段典型进行选出的节奏栅格（不参与断言）。
     _show([("C", 4), ("G", 4), ("Am", 4), ("F", 4)], "chorus", "pop", gtr)

@@ -21,7 +21,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from .string_role import StringRole
 
 
 @dataclass(frozen=True)
@@ -46,17 +49,25 @@ class Pluck:
     """一次右手拨弦/琶音动作。
 
     与 :class:`Stroke` 是**不同的右手动作**：扫弦是「一次扫过多根弦」，拨弦是
-    「一次拨一根或几根指定的弦」。分解节奏型的基本单元。具体拨哪根弦、按什么顺序，
-    首期不建模（``strings=None`` 即可），只占住「这一格是个拨弦发音」的语义；
-    后续要精确表达分解形态时再给 ``strings`` 填 ``tuple[int, ...]``。
+    「一次拨一根或几根指定的弦」。分解节奏型的基本单元。
+
+    弦序用「弦角色」(``role``) 表达，而非固定弦号--分解的弦序随和弦走，固定弦号
+    只对单一和弦准。模板里只填 ``role``（``Root()`` / ``Fifth('avoid_bass')`` /
+    ``TopN(2,'comfortable')`` 等），选型时由 :func:`rhythm_pattern.string_role`
+    按当前和弦 voicing 实例化成具体弦号填进 ``strings``。详见 :mod:`string_role`。
 
     Attributes
     ----------
+    role
+        弦角色，描述「拨什么」(音级/音区/弦组/音距约束)。模板层填写。
+        ``None`` 表示占位拨弦（不指定弦），仅用于节奏骨架测试模板。
     strings
-        拨哪几根弦（``0`` = 最高音弦，与 :mod:`chord_fingering` 一致）。
-        ``None`` 表示「拨弦但暂不指定弦」，占位用；不参与指法可行性判定。
+        实例化后的具体弦号下标元组（``0`` = 最低音弦，与 :mod:`chord_fingering`
+        ``Fingering.positions`` 同序）。模板层为 ``None``；选型器实例化后填入。
+        运行时若 ``role`` 解析失败（voicing 无该音级等），保持 ``None`` 表示「拨但弦未定」。
     """
 
+    role: "StringRole | None" = None
     strings: tuple[int, ...] | None = None
 
     def __str__(self) -> str:

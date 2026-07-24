@@ -31,6 +31,16 @@ from typing import TYPE_CHECKING, Literal
 from chord_fingering import count_muted, enumerate_fingerings
 
 from .model import Cell, Pluck, RhythmEvent, RhythmGrid, Stroke, StrumPattern
+from .string_role import (
+    All,
+    Fifth,
+    Root,
+    Seventh,
+    Third,
+    TopN,
+    VoicingData,
+    voicing_from_fingering,
+)
 
 if TYPE_CHECKING:
     from pytheory import Fretboard
@@ -51,7 +61,6 @@ TechniqueBaseline = Literal["strum", "arpeggio", "mixed"] | None
 
 D = Stroke("D")
 U = Stroke("U")
-P = Pluck()  # 占位拨弦：暂不指定弦，仅占住「这一格是个拨弦发音」的语义。
 REST: Cell | None = None
 
 
@@ -134,13 +143,31 @@ STRUM_PATTERNS: list[StrumPattern] = [
         sections=("chorus", "bridge"),
         style="rock",
     ),
-    # ── 分解模板（占位 Pluck，暂不指定弦序）────────────────────
+    # ── 分解模板（Pluck 带 StringRole，选型时按 voicing 实例化弦号）─────────
+    StrumPattern(
+        name="root-5-top2 (1拍)",
+        # 「5,3,21」式 1 拍动机：根音(16分)-五音(16分)-顶两弦同拨(8分)。
+        # 顶两弦用 TopN(2,'comfortable')，按 voicing 动态选：C 选 2-1 弦（顶音距合适、
+        # 丰富），G 根音在 6 弦更低，选 3-2 弦收窄顶底音距、避免尖锐。一次拨多根弦
+        # 靠 Pluck.strings 长度>1 表达。弦序随和弦走，固定弦号做不到。
+        grid_motif=(Pluck(role=Root()), Pluck(role=Fifth("avoid_bass")), Pluck(role=TopN(2, "comfortable")), REST),
+        motif_beats=1,
+        min_beats=1,
+        ideal_beats=(1, 2, 4),
+        sections=("verse", "prechorus", "bridge"),
+        style="folk",
+        technique="arpeggio",
+    ),
     StrumPattern(
         name="53231323 (16分)",
-        # 经典民谣分解指法 5-3-2-3-1-3-2-3，8 个音各占 1 个 16 分位置 = 2 拍动机。
-        # Pluck 暂用占位 strings=None，仅表达「这一格拨一弦」的节奏骨架；
-        # 弦序信息（5,3,2,3,1,3,2,3）待 Pluck.strings 字段落实后回填。
-        grid_motif=(P, P, P, P, P, P, P, P),
+        # 经典民谣分解 5-3-2-3-1-3-2-3，8 个音各占 1 个 16 分位置 = 2 拍动机。
+        # C 和弦 x32010 各弦音级：5弦C=根音、4弦E=三音、3弦G=五音、2弦C=根音(高八度)、
+        # 1弦E=三音(高八度)。故 5-3-2-3-1-3-2-3 = root-fifth-root(treble)-fifth-
+        # third(treble)-fifth-root(treble)-fifth。音级角色随和弦走，换和弦自动映射弦号。
+        grid_motif=(
+            Pluck(role=Root()), Pluck(role=Fifth()), Pluck(role=Root("treble")), Pluck(role=Fifth()),
+            Pluck(role=Third("treble")), Pluck(role=Fifth()), Pluck(role=Root("treble")), Pluck(role=Fifth()),
+        ),
         motif_beats=2,
         min_beats=2,
         ideal_beats=(2, 4),
@@ -152,9 +179,10 @@ STRUM_PATTERNS: list[StrumPattern] = [
         name="53231323 (8分)",
         # 同一指法 5-3-2-3-1-3-2-3 的 8 分版：8 个音各占 2 个 16 分位置 = 4 拍动机。
         # 比 16 分版舒缓，适合慢板抒情段落。每个 Pluck 后跟一个 REST 占住 8 分时值。
+        # 音级角色同 16 分版（见上）。
         grid_motif=(
-            P, REST, P, REST, P, REST, P, REST,
-            P, REST, P, REST, P, REST, P, REST,
+            Pluck(role=Root()), REST, Pluck(role=Fifth()), REST, Pluck(role=Root("treble")), REST, Pluck(role=Fifth()), REST,
+            Pluck(role=Third("treble")), REST, Pluck(role=Fifth()), REST, Pluck(role=Root("treble")), REST, Pluck(role=Fifth()), REST,
         ),
         motif_beats=4,
         min_beats=4,
@@ -167,7 +195,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         name="5323 (8分)",
         # 53231323 的前半截 5-3-2-3，4 个音各占 8 分 = 1 拍动机，循环两遍即 5323-5323。
         # 适合拍数不定的短和弦或快段落的分解。
-        grid_motif=(P, REST, P, REST),
+        grid_motif=(Pluck(role=Root()), REST, Pluck(role=Fifth()), REST),
         motif_beats=1,
         min_beats=1,
         ideal_beats=(1, 2, 4),
@@ -177,8 +205,9 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="arpeggio placeholder",
-        # 最简占位分解：1 拍拨一弦-休-休-休。密度最低的分解骨架，兼作技法基线测试用。
-        grid_motif=(P, REST, REST, REST),
+        # 最简占位分解：1 拍拨一弦-休-休-休。role=None 的 Pluck，弦序不指定，
+        # 兼作技法基线测试用（technique_baseline 切分解时兜底）。
+        grid_motif=(Pluck(role=None), REST, REST, REST),
         motif_beats=1,
         min_beats=1,
         ideal_beats=(2, 4),
@@ -314,21 +343,49 @@ def pattern_cost(
     return cost
 
 
-def _resolve_muted(chord: str, fretboard: "Fretboard", max_stretch: int) -> tuple[int, int, int]:
-    """取该和弦首选指法的闷弦结构 ``(inner, low, high)``。
+def _resolve_voicing(chord: str, fretboard: "Fretboard", max_stretch: int) -> VoicingData | None:
+    """取该和弦首选指法的 voicing（供扫弦闷音判定 + 分解弦角色实例化）。
 
-    扫弦不挑单弦，所以只需知道「哪些弦会被闷掉」即可判断全扫是否好听。
-    用 :func:`chord_fingering.enumerate_fingerings` 排序第一的指法作为默认 voicing。
+    用 :func:`chord_fingering.enumerate_fingerings` 排序第一的指法作默认 voicing。
+    返回 :class:`string_role.VoicingData`（含 positions 与 (弦号, midi)）；指法库找不到
+    可行 voicing（罕见）时返回 ``None``，由调用方按「无闷音、角色不实例化」降级。
     """
     ranked = enumerate_fingerings(
         chord, fretboard, max_fret=7, max_stretch=max_stretch, limit=1
     )
     if not ranked:
-        # 指法库找不到可行 voicing（罕见），按「无闷音」处理，不干预选型。
+        return None
+    f = ranked[0]
+    return voicing_from_fingering(f.positions, f.tones)
+
+
+def _voicing_muted(voicing: VoicingData | None, fretboard: "Fretboard") -> tuple[int, int, int]:
+    """从 voicing 算闷弦结构 ``(inner, low, high)``；voicing 为 None 时按无闷音降级。"""
+    if voicing is None:
         return (0, 0, 0)
-    positions = ranked[0].positions
-    open_tones = fretboard.tones
-    return count_muted(positions, open_tones)
+    return count_muted(voicing.positions, fretboard.tones)
+
+
+def _instantiate_plucks(grid: RhythmGrid, voicing: VoicingData | None) -> RhythmGrid:
+    """把栅格里 Pluck 的 role 按 voicing 实例化成具体弦号，填进 Pluck.strings。
+
+    扫弦 (Stroke) 与休止 (None) 格不动。Pluck 格：``role`` 非 None 且 voicing 可用时，
+    调 ``role.resolve(voicing)`` 得弦号填入 ``strings``；解析失败或无 voicing 时，
+    ``strings`` 保持 ``None``（拨弦但弦未定，不阻塞输出）。模板层原 Pluck 不被修改--
+    本函数返回新栅格，event 持有实例化后的栅格。
+    """
+    if voicing is None:
+        return grid  # 无 voicing，Pluck.strings 保持 None。
+    new_cells: list[Cell] = []
+    for c in grid.cells:
+        if isinstance(c, Pluck) and c.role is not None:
+            resolved = c.role.resolve(voicing)
+            # resolved 为 None 表示该 role 在此 voicing 上无法解析（如省了五音还取五音）。
+            # 保留 role、strings=None，栅格结构不变，仅弦序未定。
+            new_cells.append(Pluck(role=c.role, strings=resolved))
+        else:
+            new_cells.append(c)
+    return RhythmGrid(tuple(new_cells))
 
 
 def enumerate_rhythm_patterns(
@@ -374,8 +431,9 @@ def enumerate_rhythm_patterns(
 
     # 预算每个和弦的目标密度，供连贯性判据用前后相邻差。
     targets = [_target_density(section, b) for _, b in progression]
-    # 预算每个和弦首选 voicing 的闷弦结构。
-    muted = [_resolve_muted(c, fretboard, max_stretch) for c, _ in progression]
+    # 预算每个和弦首选 voicing：扫弦用其闷弦结构，分解用其实例化弦角色。
+    voicings = [_resolve_voicing(c, fretboard, max_stretch) for c, _ in progression]
+    muted = [_voicing_muted(v, fretboard) for v in voicings]
 
     events: list[RhythmEvent] = []
     for i, (chord, beats) in enumerate(progression):
@@ -406,7 +464,7 @@ def enumerate_rhythm_patterns(
             # 拍数门槛把所有模板都筛掉了（理论不会发生，最小 min_beats=1）。
             # 退路：用 boom-chick（min_beats=1）兜底，保证总有输出。
             fallback = next(p for p in STRUM_PATTERNS if p.name == "boom-chick")
-            grid = fallback.grid_for(beats)
+            grid = _instantiate_plucks(fallback.grid_for(beats), voicings[i])
             events.append(RhythmEvent(chord=chord, beats=beats, pattern=fallback, grid=grid))
             continue
 
@@ -415,7 +473,7 @@ def enumerate_rhythm_patterns(
         if limit is not None:
             scored = scored[:limit]
         best = scored[0][1]
-        grid = best.grid_for(beats)
+        grid = _instantiate_plucks(best.grid_for(beats), voicings[i])
         events.append(RhythmEvent(chord=chord, beats=beats, pattern=best, grid=grid))
 
     return events
