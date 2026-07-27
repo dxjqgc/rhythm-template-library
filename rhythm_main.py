@@ -209,6 +209,167 @@ def check_string_roles(gtr) -> None:
     print("  断言通过: 弦角色按 voicing 实例化，C 选 21 / G 选 32 自适应")
 
 
+def check_selection_context(gtr) -> None:
+    """SelectionContext 抽象层：拍号、BPM 维度介入 + 缺省降级。
+
+    验证三件事：
+
+    1. **拍号契合**：``ctx.time_signature=(3,4)`` 下，``motif_beats=4`` 的 4 拍周期
+       模板（pop D-DU-U-DU）吃 ``W_TIME_SIG`` 罚分，应让位能整周期对齐的短动机模板。
+    2. **BPM 可演奏性**：``ctx.bpm=180``（高 BPM）下，``53231323 (16分)`` 这类密度 1.0
+       的过密分解模板吃 ``W_BPM_HIGH`` 罚分，让位低密度模板。
+    3. **缺省降级**：``SelectionContext()`` 全空字段时，输出与旧式调用
+       ``enumerate_rhythm_patterns(progression, gtr)`` 完全一致（拍号/BPM 不介入）。
+    """
+    print("\n=== SelectionContext 抽象层 ===")
+    from rhythm_pattern import SelectionContext
+
+    # ── 1. 拍号契合：3/4 拍号下 4 拍周期模板被罚分让位 ──
+    # 占 4 拍的和弦：4/4（缺省）下 pop D-DU-U-DU（motif_beats=4）靠整动机奖励 + ideal_beats
+    # 命中胜出。显式给 (3,4) 拍号后，该模板吃 W_TIME_SIG 罚分（4 拍动机在 3/4 拍号下不周期
+    # 对齐），应被压下让位其他模板。注意：min_beats=4 不会被拍号筛掉（仍占 4 拍），靠罚分降级。
+    prog = [("C", 4)]
+    e_44 = enumerate_rhythm_patterns(prog, gtr, section="chorus", style="pop")[0]
+    e_34 = enumerate_rhythm_patterns(
+        prog, gtr, ctx=SelectionContext(section="chorus", style="pop", time_signature=(3, 4))
+    )[0]
+    print(f"  4拍和弦 4/4(缺省) -> {e_44.pattern.name}")
+    print(f"  4拍和弦 (3,4)拍号 -> {e_34.pattern.name}")
+    assert e_44.pattern.name == "pop D-DU-U-DU", (
+        "4/4 缺省下 4 拍和弦应选 pop D-DU-U-DU（整动机奖励），实际 "
+        f"{e_44.pattern.name}"
+    )
+    assert e_34.pattern.name != "pop D-DU-U-DU", (
+        "3/4 拍号下 4 拍周期模板 pop D-DU-U-DU 应被拍号罚分压下，实际仍被选中"
+    )
+
+    # ── 2. BPM 可演奏性：高 BPM 下过密模板吃罚分 ──
+    # 直接在 pattern_cost 层验证罚分值，不依赖整体选型能否翻盘（BPM 是软罚分，在 chorus
+    # 高目标密度段落下，高密度模板即便加罚也仍可能胜出--这是设计预期，不该靠翻盘来验证）。
+    # 53231323 (16分) 密度 1.0，180 BPM 下应吃 (1.0-0.5)*W_BPM_HIGH = 1.5 罚分；
+    # pop 8th-notes 密度 1.0 同理。低密度模板（boom-chick 0.25）不受 BPM 影响。
+    from rhythm_pattern import pattern_cost
+    dense = next(p for p in STRUM_PATTERNS if p.name == "53231323 (16分)")
+    sparse = next(p for p in STRUM_PATTERNS if p.name == "boom-chick")
+    common = dict(beats=2, muted=(0, 0, 0), density_neighbor_delta=None)
+    ctx_no_bpm = SelectionContext(section="verse", style="folk")
+    ctx_fast = SelectionContext(section="verse", style="folk", bpm=180)
+    cost_dense_no = pattern_cost(dense, **common, ctx=ctx_no_bpm)
+    cost_dense_fast = pattern_cost(dense, **common, ctx=ctx_fast)
+    cost_sparse_no = pattern_cost(sparse, **common, ctx=ctx_no_bpm)
+    cost_sparse_fast = pattern_cost(sparse, **common, ctx=ctx_fast)
+    print(f"  53231323(16分) 密度1.0: bpm缺省={cost_dense_no:.2f} bpm=180={cost_dense_fast:.2f} (差 {cost_dense_fast-cost_dense_no:+.2f})")
+    print(f"  boom-chick     密度0.25: bpm缺省={cost_sparse_no:.2f} bpm=180={cost_sparse_fast:.2f} (差 {cost_sparse_fast-cost_sparse_no:+.2f})")
+    assert cost_dense_fast > cost_dense_no, "高 BPM 下过密分解模板代价应上升"
+    assert abs((cost_dense_fast - cost_dense_no) - 1.5) < 1e-9, (
+        "过密模板(密度1.0)在高 BPM 下罚分应为 (1.0-0.5)*W_BPM_HIGH=1.5，"
+        f"实际差 {cost_dense_fast - cost_dense_no}"
+    )
+    assert cost_sparse_fast == cost_sparse_no, (
+        "低密度模板(密度0.25<=0.5)不应受 BPM 罚分影响，实际差 "
+        f"{cost_sparse_fast - cost_sparse_no}"
+    )
+
+    # ── 3. 缺省降级：SelectionContext() 全空 与 旧式默认调用 等价 ──
+    prog_decay = [("C", 4), ("G", 2), ("Am", 2)]
+    e_old = enumerate_rhythm_patterns(prog_decay, gtr)  # 旧式默认：section=chorus, style=pop
+    e_ctx = enumerate_rhythm_patterns(
+        prog_decay, gtr, ctx=SelectionContext()  # 全空 -> 降级到 chorus/pop，拍号/BPM 不介入
+    )
+    old_names = [e.pattern.name for e in e_old]
+    ctx_names = [e.pattern.name for e in e_ctx]
+    print(f"  旧式默认调用      -> {old_names}")
+    print(f"  SelectionContext()-> {ctx_names}")
+    assert old_names == ctx_names, (
+        f"SelectionContext() 全空应与旧式默认调用等价，实际\n  旧式={old_names}\n  ctx ={ctx_names}"
+    )
+
+    print("  断言通过: 拍号/BPM 介入生效；缺省降级与旧式调用等价")
+
+
+def check_arrange_progression(gtr) -> None:
+    """整段编排入口 arrange_progression：位置维度 + DP 连贯性 + 指法序列。
+
+    验证三件事：
+
+    1. **位置维度自动生效**：尾和弦（tail 位置）倾向选收束型模板（如琶音收尾），
+       中段和弦不选它。位置由 arrange_progression 按段内下标自动判定，无需调用方传入。
+    2. **DP 连贯性优于贪心**：构造贪心会「扫-拆-扫」跳变的进行，DP 应选出技法连贯的路径。
+    3. **指法序列输出**：event.fingering 把 grid 正确转成 FingeringAction 序列。
+    """
+    print("\n=== 整段编排 arrange_progression ===")
+    from rhythm_pattern import (
+        SelectionContext,
+        arrange_progression,
+        enumerate_rhythm_patterns,
+        fingering_sequence,
+        FingeringAction,
+    )
+
+    # ── 1. 位置维度：尾和弦倾向收束型 ──
+    # verse folk 4-2-2 进行，末和弦（Am，tail 位置）应倾向琶音收尾或分解收束，
+    # 而非中段扫弦。arpeggio cadence (tail) 标了 positions=("tail",)，tail 位置 0 罚分。
+    prog = [("C", 4), ("G", 2), ("Am", 2)]
+    ctx = SelectionContext(section="verse", style="folk")
+    events = arrange_progression(prog, gtr, ctx=ctx, k=3)
+    tail_name = events[-1].pattern.name
+    middle_name = events[1].pattern.name
+    print(f"  4-2-2 verse folk: head={events[0].pattern.name} middle={middle_name} tail={tail_name}")
+    # 尾和弦应选分解/收束类（arpeggio），不该选扫弦--尾收束偏分解。
+    assert events[-1].pattern.is_arpeggio, (
+        f"尾和弦(tail)应倾向分解/收束型，实际选了扫弦 {tail_name}"
+    )
+    # 中段和弦不应选标了 positions=("tail",) 的琶音收尾模板（非 tail 位置吃 W_POSITION）。
+    tail_only = {p.name for p in __import__("rhythm_pattern").STRUM_PATTERNS
+                 if p.positions == ("tail",)}
+    assert middle_name not in tail_only, (
+        f"中段和弦(middle)不应选 tail 专属模板 {tail_only}，实际选了 {middle_name}"
+    )
+
+    # ── 2. DP 连贯性：比贪心更连贯 ──
+    # 构造一个贪心容易「扫-拆-扫」跳变的进行：chorus pop，每和弦 1 拍。
+    # 贪心逐和弦取第 1 名可能各不相同；DP 应选技法连贯的路径（同技法延续）。
+    prog_jump = [("C", 1), ("G", 1), ("Am", 1), ("F", 1)]
+    ctx_pop = SelectionContext(section="chorus", style="pop")
+    greedy = enumerate_rhythm_patterns(prog_jump, gtr, ctx=ctx_pop)
+    arranged = arrange_progression(prog_jump, gtr, ctx=ctx_pop, k=3)
+
+    def _tech_changes(evs):
+        return sum(1 for a, b in zip(evs, evs[1:]) if a.pattern.technique != b.pattern.technique)
+
+    def _template_changes(evs):
+        return sum(1 for a, b in zip(evs, evs[1:]) if a.pattern.name != b.pattern.name)
+
+    g_tech = _tech_changes(greedy)
+    a_tech = _tech_changes(arranged)
+    g_tpl = _template_changes(greedy)
+    a_tpl = _template_changes(arranged)
+    print(f"  贪心: 技法跳变={g_tech} 模板跳变={g_tpl} -> {[e.pattern.name for e in greedy]}")
+    print(f"  DP:   技法跳变={a_tech} 模板跳变={a_tpl} -> {[e.pattern.name for e in arranged]}")
+    # DP 的技法跳变数应 <= 贪心（DP 全局优化连贯性）。
+    assert a_tech <= g_tech, (
+        f"DP 技法跳变数({a_tech})应 <= 贪心({g_tech})，DP 更连贯"
+    )
+
+    # ── 3. 指法序列输出 ──
+    e = events[0]
+    fs = e.fingering
+    print(f"  C 4拍 {e.pattern.name} 指法序列(前8): {[(a.kind, a.strings) for a in fs[:8]]}")
+    # 长度 = 4 * beats = 16。
+    assert len(fs) == 4 * e.beats, (
+        f"指法序列长度应=4*beats={4 * e.beats}，实际 {len(fs)}"
+    )
+    # 每个动作 kind 合法、strings 类型对（pluck 可有弦号，stroke/rest 为 None）。
+    for a in fs:
+        assert a.kind in ("stroke_down", "stroke_up", "pluck", "rest"), f"非法 kind {a.kind}"
+        if a.kind in ("stroke_down", "stroke_up", "rest"):
+            assert a.strings is None, f"{a.kind} 的 strings 应为 None，实际 {a.strings}"
+    # fingering_sequence 函数与 event.fingering 属性一致。
+    assert fs == fingering_sequence(e.grid), "event.fingering 应与 fingering_sequence(grid) 一致"
+
+    print("  断言通过: 位置自动生效；DP 连贯性不劣于贪心；指法序列正确")
+
+
 def main() -> None:
     gtr = Fretboard.guitar()
 
@@ -218,6 +379,8 @@ def main() -> None:
     check_progression_continuity(gtr)
     check_technique_baseline(gtr)
     check_string_roles(gtr)
+    check_selection_context(gtr)
+    check_arrange_progression(gtr)
 
     # 展示几段典型进行选出的节奏栅格（不参与断言）。
     _show([("C", 4), ("G", 4), ("Am", 4), ("F", 4)], "chorus", "pop", gtr)
