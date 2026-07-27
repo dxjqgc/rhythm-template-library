@@ -1,0 +1,29 @@
+rhythm_pattern/model.py
+  adcc0ecfe23eb56d 30-42,184-187,264-323
+rhythm_pattern/strum_patterns.py
+  adcc0ecfe23eb56d 9-18,23,27-28,32-37,39,45,50,66-72,83-151,310-346,364-387,412,428-431,433-435,472-500,513,569-604,613,618-625,634,637,639-640,643-646,657-667,671,673,685-690,696,704-724,726-861
+rhythm_pattern/__init__.py
+  adcc0ecfe23eb56d 1-7,10-11,14-16,21-23,28-45,65-67,70,72
+rhythm_main.py
+  adcc0ecfe23eb56d 212-372,382-383
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "4524b7b1fd0c64839718b3b867db650f51957b53",
+  "prompts": {
+    "adcc0ecfe23eb56d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "74d9fa0c-d5b3-47c5-b2c0-c7502db628ab",
+        "model": "glm-5.2"
+      },
+      "human_author": "rhett.hu",
+      "messages": [],
+      "total_additions": 739,
+      "total_deletions": 87,
+      "accepted_lines": 705,
+      "overriden_lines": 0
+    }
+  }
+}
