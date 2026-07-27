@@ -27,6 +27,19 @@ if TYPE_CHECKING:
     from .string_role import StringRole
 
 
+Position = Literal["head", "middle", "tail"]
+"""和弦在段落中的位置。
+
+- ``"head"``    段落首和弦；实际演奏中一般**不做特殊处理**，故无模板标 ``positions=("head",)``，
+              head 位置对所有模板位置中立。
+- ``"middle"``  段落中间和弦。
+- ``"tail"``   段落末和弦；常有收束处理（如琶音收尾），是位置维度的重点。
+
+模板的 ``positions`` 标签为空时表示位置中立（所有位置都不罚）；非空时仅在这些位置
+0 罚分、其他位置罚 ``W_POSITION``。这样不强迫所有模板都标位置，与 ``sections`` 同构。
+"""
+
+
 @dataclass(frozen=True)
 class Stroke:
     """一次右手扫弦动作。
@@ -168,6 +181,10 @@ class StrumPattern:
     sections: tuple[str, ...]
     style: str
     technique: Literal["strum", "arpeggio"] = "strum"
+    positions: tuple[Position, ...] = ()
+    """适用位置标签，:data:`Position` 的子集。空（默认）= 位置中立，所有位置都不罚分；
+    非空时仅在这些位置 0 罚分、其他位置罚 ``W_POSITION``。只有需要特殊位置处理的模板
+    （如琶音收尾）才填，如 ``("tail",)``。head 一般不做特殊处理，故无模板标 ``("head",)``。"""
 
     def __post_init__(self) -> None:
         expected = 4 * self.motif_beats
@@ -244,3 +261,63 @@ class RhythmEvent:
     beats: int
     pattern: StrumPattern
     grid: RhythmGrid
+
+    @property
+    def fingering(self) -> "tuple[FingeringAction, ...]":
+        """该和弦节奏型的指法动作序列，由 :func:`fingering_sequence` 从 ``grid`` 派生。
+
+        转谱项目可直接消费此序列渲染到吉他谱，无需自行解释 ``grid.cells``。
+        """
+        return fingering_sequence(self.grid)
+
+
+@dataclass(frozen=True)
+class FingeringAction:
+    """一个吉他指法动作（转谱项目消费的最小单元）。
+
+    把 :class:`RhythmGrid` 的 16 分栅格按格转成动作序列后，每格对应一个 ``FingeringAction``。
+    休止格也保留（``kind="rest"``），以维持时间轴对齐--转谱侧按序列顺序渲染即可还原时值。
+
+    Attributes
+    ----------
+    kind
+        动作类型：
+
+        - ``"stroke_down"`` - 下扫（低->高音弦，强拍常用）；
+        - ``"stroke_up"``   - 上扫（高->低音弦，弱拍回扫）；
+        - ``"pluck"``       - 拨弦/琶音（一次拨指定弦号，可多根）；
+        - ``"rest"``        - 休止（该 16 分位置不发声）。
+    strings
+        弦号下标元组（``0`` = 最低音弦，与 :mod:`chord_fingering` ``Fingering.positions``
+        同序）。``stroke_down``/``stroke_up`` 时为 ``None``（扫弦扫的是「当时按住的弦组」，
+        由和弦 voicing 决定，不在动作层指定）；``pluck`` 时为拨弦号（实例化后填入，
+        未实例化时为 ``None`` 表示「拨但弦未定」）；``rest`` 时为 ``None``。
+
+    Notes
+    -----
+    后续可扩展力度、闷音/切音等修饰--加字段即可，``kind`` 已区分动作大类。
+    """
+
+    kind: Literal["stroke_down", "stroke_up", "pluck", "rest"]
+    strings: tuple[int, ...] | None
+
+
+def fingering_sequence(grid: RhythmGrid) -> tuple[FingeringAction, ...]:
+    """把 16 分栅格转成 :class:`FingeringAction` 序列。
+
+    每格一个动作，``Stroke("D")`` -> ``stroke_down``、``Stroke("U")`` -> ``stroke_up``、
+    ``Pluck`` -> ``pluck``（带实例化后的 ``strings``）、``None`` -> ``rest``。序列长度 =
+    栅格格数（``4 × beats``），保留休止以维持时间轴对齐。
+    """
+    actions: list[FingeringAction] = []
+    for cell in grid.cells:
+        if isinstance(cell, Stroke):
+            actions.append(FingeringAction(
+                kind="stroke_down" if cell.direction == "D" else "stroke_up",
+                strings=None,
+            ))
+        elif isinstance(cell, Pluck):
+            actions.append(FingeringAction(kind="pluck", strings=cell.strings))
+        else:
+            actions.append(FingeringAction(kind="rest", strings=None))
+    return tuple(actions)
