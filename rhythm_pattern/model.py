@@ -270,13 +270,56 @@ class RhythmEvent:
         """
         return fingering_sequence(self.grid)
 
+    def to_dict(self) -> dict:
+        """转 JSON 友好的 dict，只暴露转谱项目需要的字段。
+
+        结构::
+
+            {
+              "chord": "C",            # 和弦符号
+              "beats": 4,              # 占拍数
+              "pattern": "folk D-DU",  # 节奏型模板名（人类可读）
+              "technique": "strum",    # 技法大类 "strum" / "arpeggio"
+              "fingering": [          # 指法动作序列（同 self.fingering，逐项 to_dict）
+                {"kind": "stroke_down", "strings": null},
+                {"kind": "rest", "strings": null},
+                ...
+              ]
+            }
+
+        不暴露 ``grid.cells`` 原始栅格与模板内部结构（``grid_motif``/权重等）--转谱侧
+        只需指法动作序列。``json.dumps(event.to_dict(), ensure_ascii=False)`` 即得完整 JSON。
+        """
+        return {
+            "chord": self.chord,
+            "beats": self.beats,
+            "pattern": self.pattern.name,
+            "technique": self.pattern.technique,
+            "fingering": [a.to_dict() for a in self.fingering],
+        }
+
 
 @dataclass(frozen=True)
 class FingeringAction:
     """一个吉他指法动作（转谱项目消费的最小单元）。
 
-    把 :class:`RhythmGrid` 的 16 分栅格按格转成动作序列后，每格对应一个 ``FingeringAction``。
-    休止格也保留（``kind="rest"``），以维持时间轴对齐--转谱侧按序列顺序渲染即可还原时值。
+    把 :class:`RhythmGrid` 的 16 分栅格聚合成动作序列：连续的「发音延续」格合并进
+    发音动作，``duration`` 显式记录该动作占多少个 16 分位置。
+
+    时值模型（关键）
+    ----------------
+    吉他扫/拨弦后弦持续振动，栅格里的 ``.``（不拨弦格）在多数模板里表示「该发音
+    的延续」而非「真静默」。故：
+
+    - **发音动作**（stroke/pluck）的 ``duration`` = 从该发音格到**下一个发音格**的距离
+      （含中间的 ``.`` 格），表示这个音持续响多久。如 ``D . . .`` -> 一个 ``stroke_down``
+      ``duration=4``（扫一下持续一拍）。
+    - **rest** 只在「真静默」时出现：即发音动作**之前**的留白（如反拍起拍前的小静默，
+      ``REST U REST REST`` -> ``rest(1) + stroke_up(3)``）。发音后的 ``.`` 被发音吸收，
+      不再单列 rest。
+
+    这样 ``rest`` 严格表示静默休止，发音动作的 ``duration`` 严格表示音的持续时长，
+    转谱侧无需自己推算时值。
 
     Attributes
     ----------
@@ -286,12 +329,16 @@ class FingeringAction:
         - ``"stroke_down"`` - 下扫（低->高音弦，强拍常用）；
         - ``"stroke_up"``   - 上扫（高->低音弦，弱拍回扫）；
         - ``"pluck"``       - 拨弦/琶音（一次拨指定弦号，可多根）；
-        - ``"rest"``        - 休止（该 16 分位置不发声）。
+        - ``"rest"``        - 休止（真静默，该时段不发声）。
     strings
         弦号下标元组（``0`` = 最低音弦，与 :mod:`chord_fingering` ``Fingering.positions``
         同序）。``stroke_down``/``stroke_up`` 时为 ``None``（扫弦扫的是「当时按住的弦组」，
         由和弦 voicing 决定，不在动作层指定）；``pluck`` 时为拨弦号（实例化后填入，
         未实例化时为 ``None`` 表示「拨但弦未定」）；``rest`` 时为 ``None``。
+    duration
+        该动作占多少个 **16 分音符位置**（1=16分、2=8分、4=四分、8=二分...）。
+        发音动作的 duration 含其后的延续格；rest 的 duration 为静默时长。序列所有动作
+        duration 之和 = 栅格总格数（``4 × beats``），时间轴完整对齐。
 
     Notes
     -----
@@ -300,24 +347,65 @@ class FingeringAction:
 
     kind: Literal["stroke_down", "stroke_up", "pluck", "rest"]
     strings: tuple[int, ...] | None
+    duration: int = 1
+
+    def to_dict(self) -> dict:
+        """转 JSON 友好的 dict（``kind`` + ``strings`` + ``duration``）。
+
+        供转谱项目跨语言消费：``json.dumps(action.to_dict())`` 即得
+        ``{"kind": ..., "strings": ..., "duration": ...}``。``strings`` 为 ``None`` 时输出 null。
+        """
+        return {
+            "kind": self.kind,
+            "strings": list(self.strings) if self.strings is not None else None,
+            "duration": self.duration,
+        }
 
 
 def fingering_sequence(grid: RhythmGrid) -> tuple[FingeringAction, ...]:
-    """把 16 分栅格转成 :class:`FingeringAction` 序列。
+    """把 16 分栅格聚合成带 ``duration`` 的 :class:`FingeringAction` 序列。
 
-    每格一个动作，``Stroke("D")`` -> ``stroke_down``、``Stroke("U")`` -> ``stroke_up``、
-    ``Pluck`` -> ``pluck``（带实例化后的 ``strings``）、``None`` -> ``rest``。序列长度 =
-    栅格格数（``4 × beats``），保留休止以维持时间轴对齐。
+    时值模型（见 :class:`FingeringAction`）：
+
+    - **发音动作**（Stroke/Pluck）的 ``duration`` = 到下一个发音格的距离（含中间的 ``.`` 格），
+      表示该音持续响多久。发音后的 ``.`` 被发音吸收，不单列 rest。
+    - **rest** 只在「真静默」时出现：发音动作**之前**的留白（如反拍起拍前的小静默）。
+      连续静默格合并成一个 rest，``duration`` = 静默格数。
+
+    序列所有动作 ``duration`` 之和 = 栅格总格数（``4 × beats``），时间轴完整对齐。
+
+    示例
+    ----
+    - ``D . . .`` -> ``stroke_down(duration=4)``（扫一下持续一拍，无 rest）
+    - ``P . P .`` -> ``pluck(2) pluck(2)``（8 分分解，音持续 8 分）
+    - ``P P P P`` -> ``pluck(1)×4``（16 分分解，音各 16 分）
+    - ``REST U REST REST`` -> ``rest(1) stroke_up(3)``（反拍前静默 1 格，上扫持续到拍末）
     """
+    cells = grid.cells
+    n = len(cells)
     actions: list[FingeringAction] = []
-    for cell in grid.cells:
-        if isinstance(cell, Stroke):
-            actions.append(FingeringAction(
-                kind="stroke_down" if cell.direction == "D" else "stroke_up",
-                strings=None,
-            ))
-        elif isinstance(cell, Pluck):
-            actions.append(FingeringAction(kind="pluck", strings=cell.strings))
+    i = 0
+    # 先吃掉开头的静默（发音前的真休止），逐段处理。
+    while i < n:
+        cell = cells[i]
+        if cell is None:
+            # 静默段：连续的 None 合并成一个 rest，duration = 连续格数。
+            j = i
+            while j < n and cells[j] is None:
+                j += 1
+            actions.append(FingeringAction(kind="rest", strings=None, duration=j - i))
+            i = j
         else:
-            actions.append(FingeringAction(kind="rest", strings=None))
+            # 发音格：duration = 到下一个发音格的距离（含中间的 None，它们是延续而非静默）。
+            if isinstance(cell, Stroke):
+                kind = "stroke_down" if cell.direction == "D" else "stroke_up"
+                strings = None
+            else:  # Pluck
+                kind = "pluck"
+                strings = cell.strings
+            j = i + 1
+            while j < n and cells[j] is None:
+                j += 1
+            actions.append(FingeringAction(kind=kind, strings=strings, duration=j - i))
+            i = j
     return tuple(actions)

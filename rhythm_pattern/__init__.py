@@ -42,6 +42,7 @@ from .strum_patterns import (
     arrange_progression,
     enumerate_rhythm_patterns,
     pattern_cost,
+    to_json,
 )
 from .string_role import (
     All,
@@ -70,6 +71,7 @@ __all__ = [
     "arrange_progression",
     "pattern_cost",
     "SelectionContext",
+    "to_json",
     # 弦角色（分解模板的弦序表达，按 voicing 实例化）
     "StringRole",
     "Root",
