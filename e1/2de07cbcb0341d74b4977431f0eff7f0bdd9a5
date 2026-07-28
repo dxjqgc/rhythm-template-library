@@ -1,0 +1,27 @@
+rhythm_main.py
+  adcc0ecfe23eb56d 19-22,252
+tests/test_rhythm_pattern.py
+  adcc0ecfe23eb56d 31,203
+rhythm_pattern/strum_patterns.py
+  adcc0ecfe23eb56d 184-186
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.3.4",
+  "base_commit_sha": "e12de07cbcb0341d74b4977431f0eff7f0bdd9a5",
+  "prompts": {
+    "adcc0ecfe23eb56d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "74d9fa0c-d5b3-47c5-b2c0-c7502db628ab",
+        "model": "glm-5.2"
+      },
+      "human_author": "rhett.hu",
+      "messages": [],
+      "total_additions": 10,
+      "total_deletions": 7,
+      "accepted_lines": 1300,
+      "overriden_lines": 0
+    }
+  }
+}
