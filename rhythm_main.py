@@ -351,17 +351,19 @@ def check_arrange_progression(gtr) -> None:
         f"DP 技法跳变数({a_tech})应 <= 贪心({g_tech})，DP 更连贯"
     )
 
-    # ── 3. 指法序列输出 ──
+    # ── 3. 指法序列输出（带 duration 时值）──
     e = events[0]
     fs = e.fingering
-    print(f"  C 4拍 {e.pattern.name} 指法序列(前8): {[(a.kind, a.strings) for a in fs[:8]]}")
-    # 长度 = 4 * beats = 16。
-    assert len(fs) == 4 * e.beats, (
-        f"指法序列长度应=4*beats={4 * e.beats}，实际 {len(fs)}"
+    print(f"  C 4拍 {e.pattern.name} 指法序列: {[(a.kind, a.duration) for a in fs]}")
+    # duration 之和 = 4 * beats（16 分栅格总数），时间轴完整对齐。
+    total_dur = sum(a.duration for a in fs)
+    assert total_dur == 4 * e.beats, (
+        f"指法序列 duration 之和应=4*beats={4 * e.beats}，实际 {total_dur}"
     )
-    # 每个动作 kind 合法、strings 类型对（pluck 可有弦号，stroke/rest 为 None）。
+    # 每个动作 kind 合法、strings 类型对（pluck 可有弦号，stroke/rest 为 None）、duration>=1。
     for a in fs:
         assert a.kind in ("stroke_down", "stroke_up", "pluck", "rest"), f"非法 kind {a.kind}"
+        assert a.duration >= 1, f"{a.kind} duration 应>=1，实际 {a.duration}"
         if a.kind in ("stroke_down", "stroke_up", "rest"):
             assert a.strings is None, f"{a.kind} 的 strings 应为 None，实际 {a.strings}"
     # fingering_sequence 函数与 event.fingering 属性一致。

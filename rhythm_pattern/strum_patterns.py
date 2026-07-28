@@ -69,6 +69,7 @@ __all__ = [
     "arrange_progression",
     "pattern_cost",
     "SelectionContext",
+    "to_json",
 ]
 
 
@@ -860,3 +861,39 @@ def arrange_progression(
         for i in range(n)
     ]
     return events
+
+
+def to_json(
+    events: Sequence[RhythmEvent],
+    *,
+    indent: int | None = None,
+    ensure_ascii: bool = True,
+) -> str:
+    """把整段编排结果转成 JSON 字符串，供转谱项目跨语言消费。
+
+    等价于 ``json.dumps([e.to_dict() for e in events], ...)``，封装一次省得调用方
+    重复写。每个 event 的结构见 :meth:`RhythmEvent.to_dict`：和弦符号、拍数、模板名、
+    技法、指法动作序列。
+
+    Parameters
+    ----------
+    events
+        :func:`enumerate_rhythm_patterns` 或 :func:`arrange_progression` 的返回值。
+    indent
+        缩进格数，``None``（默认）= 紧凑单行；``2`` = 美化缩进，便于人读。
+    ensure_ascii
+        是否转义非 ASCII 字符。模板名是中文（如 ``"53231323 (8分)"``），需保留中文
+        可读性时传 ``False``（默认 ``True``，纯 ASCII 输出）。
+
+    Returns
+    -------
+    str
+        JSON 字符串，``[ {...}, {...}, ... ]``，与 events 等长同序。
+    """
+    import json
+
+    return json.dumps(
+        [e.to_dict() for e in events],
+        indent=indent,
+        ensure_ascii=ensure_ascii,
+    )
