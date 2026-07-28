@@ -28,7 +28,7 @@ def guitar() -> Fretboard:
 PROGRESSIONS = [
     # (进行, 段落, 风格, 期望首和弦模板集合(其一), 标签)
     ([("C", 4)], "chorus", "pop", {"pop D-DU-U-DU"}, "4拍副歌流行"),
-    ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "pop", {"pop 8th-notes"}, "1拍流行副歌"),
+    ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "pop", {"D-D-DU (1拍16分)"}, "1拍流行副歌"),
     ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "rock", {"rock 8th down"}, "1拍摇滚副歌"),
     # 主歌民谣 4-2-2：4 拍 C 选 53231323 分解（民谣经典动作），2 拍 G/Am 选 folk D-DU 扫弦。
     # 分解模板引入后，4 拍专属整动机在 verse folk 上合理胜出；2 拍放不下 4 拍分解动机，退回扫弦。
@@ -200,7 +200,7 @@ class TestMotifTiling:
 
     def test_integer_multiple_tiles_full_motif(self):
         """beats 是 motif_beats 整数倍时，平铺完整动机。"""
-        # pop 8th-notes: motif 1 拍 (D,U,D,U)，占 4 拍应平铺 4 遍。
+        # pop 8th-notes: motif 1 拍 (D,.,U,.)，占 4 拍应平铺 4 遍。
         p = next(p for p in STRUM_PATTERNS if p.name == "pop 8th-notes")
         grid = p.grid_for(4)
         assert grid.cells == p.grid_motif * 4
