@@ -1,0 +1,723 @@
+[
+  {
+    "id": "boom-chick",
+    "name": "boom-chick",
+    "grid_motif": [
+      {
+        "type": "stroke",
+        "direction": "D"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      }
+    ],
+    "motif_beats": 1,
+    "min_beats": 1,
+    "ideal_beats": [
+      2,
+      4
+    ],
+    "sections": [
+      "verse"
+    ],
+    "style": "folk",
+    "technique": "strum",
+    "positions": []
+  },
+  {
+    "id": "folk D-DU",
+    "name": "folk D-DU",
+    "grid_motif": [
+      {
+        "type": "stroke",
+        "direction": "D"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "stroke",
+        "direction": "D"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "stroke",
+        "direction": "U"
+      },
+      {
+        "type": "rest"
+      }
+    ],
+    "motif_beats": 2,
+    "min_beats": 2,
+    "ideal_beats": [
+      2,
+      4
+    ],
+    "sections": [
+      "verse",
+      "prechorus"
+    ],
+    "style": "folk",
+    "technique": "strum",
+    "positions": []
+  },
+  {
+    "id": "pop 8th-notes",
+    "name": "pop 8th-notes",
+    "grid_motif": [
+      {
+        "type": "stroke",
+        "direction": "D"
+      },
+      {
+        "type": "stroke",
+        "direction": "U"
+      },
+      {
+        "type": "stroke",
+        "direction": "D"
+      },
+      {
+        "type": "stroke",
+        "direction": "U"
+      }
+    ],
+    "motif_beats": 1,
+    "min_beats": 1,
+    "ideal_beats": [
+      1,
+      2,
+      4
+    ],
+    "sections": [
+      "chorus",
+      "prechorus"
+    ],
+    "style": "pop",
+    "technique": "strum",
+    "positions": []
+  },
+  {
+    "id": "rock 8th down",
+    "name": "rock 8th down",
+    "grid_motif": [
+      {
+        "type": "stroke",
+        "direction": "D"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "stroke",
+        "direction": "D"
+      },
+      {
+        "type": "rest"
+      }
+    ],
+    "motif_beats": 1,
+    "min_beats": 1,
+    "ideal_beats": [
+      1,
+      2,
+      4
+    ],
+    "sections": [
+      "chorus"
+    ],
+    "style": "rock",
+    "technique": "strum",
+    "positions": []
+  },
+  {
+    "id": "pop D-DU-U-DU",
+    "name": "pop D-DU-U-DU",
+    "grid_motif": [
+      {
+        "type": "stroke",
+        "direction": "D"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "stroke",
+        "direction": "D"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "stroke",
+        "direction": "U"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "stroke",
+        "direction": "U"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "stroke",
+        "direction": "D"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "stroke",
+        "direction": "U"
+      },
+      {
+        "type": "rest"
+      }
+    ],
+    "motif_beats": 4,
+    "min_beats": 4,
+    "ideal_beats": [
+      4
+    ],
+    "sections": [
+      "chorus"
+    ],
+    "style": "pop",
+    "technique": "strum",
+    "positions": []
+  },
+  {
+    "id": "D-D-DU (1拍16分)",
+    "name": "D-D-DU (1拍16分)",
+    "grid_motif": [
+      {
+        "type": "stroke",
+        "direction": "D"
+      },
+      {
+        "type": "stroke",
+        "direction": "D"
+      },
+      {
+        "type": "stroke",
+        "direction": "D"
+      },
+      {
+        "type": "stroke",
+        "direction": "U"
+      }
+    ],
+    "motif_beats": 1,
+    "min_beats": 1,
+    "ideal_beats": [
+      1,
+      2
+    ],
+    "sections": [
+      "chorus",
+      "prechorus"
+    ],
+    "style": "pop",
+    "technique": "strum",
+    "positions": []
+  },
+  {
+    "id": "reggae off-beat",
+    "name": "reggae off-beat",
+    "grid_motif": [
+      {
+        "type": "rest"
+      },
+      {
+        "type": "stroke",
+        "direction": "U"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      }
+    ],
+    "motif_beats": 1,
+    "min_beats": 1,
+    "ideal_beats": [
+      1,
+      2
+    ],
+    "sections": [
+      "chorus",
+      "bridge"
+    ],
+    "style": "rock",
+    "technique": "strum",
+    "positions": []
+  },
+  {
+    "id": "root-5-top2 (1拍)",
+    "name": "root-5-top2 (1拍)",
+    "grid_motif": [
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": null
+        }
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": "avoid_bass"
+        }
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "topn",
+          "n": 2,
+          "span": "comfortable"
+        }
+      },
+      {
+        "type": "rest"
+      }
+    ],
+    "motif_beats": 1,
+    "min_beats": 1,
+    "ideal_beats": [
+      1,
+      2,
+      4
+    ],
+    "sections": [
+      "verse",
+      "prechorus",
+      "bridge"
+    ],
+    "style": "folk",
+    "technique": "arpeggio",
+    "positions": []
+  },
+  {
+    "id": "53231323 (16分)",
+    "name": "53231323 (16分)",
+    "grid_motif": [
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": null
+        }
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": null
+        }
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": "treble"
+        }
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": null
+        }
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "third",
+          "region": "treble"
+        }
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": null
+        }
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": "treble"
+        }
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": null
+        }
+      }
+    ],
+    "motif_beats": 2,
+    "min_beats": 2,
+    "ideal_beats": [
+      2,
+      4
+    ],
+    "sections": [
+      "verse",
+      "prechorus",
+      "bridge"
+    ],
+    "style": "folk",
+    "technique": "arpeggio",
+    "positions": []
+  },
+  {
+    "id": "53231323 (8分)",
+    "name": "53231323 (8分)",
+    "grid_motif": [
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": null
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": null
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": "treble"
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": null
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "third",
+          "region": "treble"
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": null
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": "treble"
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": null
+        }
+      },
+      {
+        "type": "rest"
+      }
+    ],
+    "motif_beats": 4,
+    "min_beats": 4,
+    "ideal_beats": [
+      4
+    ],
+    "sections": [
+      "verse",
+      "bridge"
+    ],
+    "style": "folk",
+    "technique": "arpeggio",
+    "positions": []
+  },
+  {
+    "id": "5323 (8分)",
+    "name": "5323 (8分)",
+    "grid_motif": [
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": null
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": null
+        }
+      },
+      {
+        "type": "rest"
+      }
+    ],
+    "motif_beats": 1,
+    "min_beats": 1,
+    "ideal_beats": [
+      1,
+      2,
+      4
+    ],
+    "sections": [
+      "verse",
+      "prechorus"
+    ],
+    "style": "folk",
+    "technique": "arpeggio",
+    "positions": []
+  },
+  {
+    "id": "arpeggio placeholder",
+    "name": "arpeggio placeholder",
+    "grid_motif": [
+      {
+        "type": "pluck",
+        "role": null
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      }
+    ],
+    "motif_beats": 1,
+    "min_beats": 1,
+    "ideal_beats": [
+      2,
+      4
+    ],
+    "sections": [
+      "verse",
+      "prechorus",
+      "bridge"
+    ],
+    "style": "folk",
+    "technique": "arpeggio",
+    "positions": []
+  },
+  {
+    "id": "arpeggio cadence (tail)",
+    "name": "arpeggio cadence (tail)",
+    "grid_motif": [
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": null
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": "avoid_bass"
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "third",
+          "region": null
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "all"
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      }
+    ],
+    "motif_beats": 4,
+    "min_beats": 4,
+    "ideal_beats": [
+      4
+    ],
+    "sections": [
+      "verse",
+      "bridge",
+      "outro"
+    ],
+    "style": "folk",
+    "technique": "arpeggio",
+    "positions": [
+      "tail"
+    ]
+  },
+  {
+    "id": "arpeggio cadence short (tail)",
+    "name": "arpeggio cadence short (tail)",
+    "grid_motif": [
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": null
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": "avoid_bass"
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "all"
+        }
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "all"
+        }
+      },
+      {
+        "type": "rest"
+      }
+    ],
+    "motif_beats": 2,
+    "min_beats": 2,
+    "ideal_beats": [
+      2,
+      4
+    ],
+    "sections": [
+      "verse",
+      "bridge",
+      "outro"
+    ],
+    "style": "folk",
+    "technique": "arpeggio",
+    "positions": [
+      "tail"
+    ]
+  }
+]

@@ -1,0 +1,60 @@
+* { box-sizing: border-box; }
+body {
+  margin: 0; font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: #f5f6f8; color: #1f2329;
+}
+header {
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 24px; background: #1f2329; color: #fff;
+}
+header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.status { font-size: 13px; opacity: .8; }
+.layout { display: grid; grid-template-columns: 360px 1fr; gap: 16px; padding: 16px; }
+.panel {
+  background: #fff; border: 1px solid #e4e6eb; border-radius: 8px; padding: 14px;
+  max-height: calc(100vh - 96px); overflow: auto;
+}
+.panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.panel-head h2 { margin: 0; font-size: 15px; }
+.search { width: 100%; margin-bottom: 8px; padding: 6px 8px; border: 1px solid #d0d3d9; border-radius: 4px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eef0f3; }
+th { color: #6b7080; font-weight: 500; }
+tbody tr { cursor: pointer; }
+tbody tr.active { background: #eef4ff; }
+tbody tr:hover { background: #f6f8fc; }
+
+.form { display: flex; flex-wrap: wrap; gap: 10px 16px; }
+.form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #6b7080; }
+.form input, .form select { padding: 5px 8px; border: 1px solid #d0d3d9; border-radius: 4px; font-size: 13px; min-width: 90px; }
+
+h3 { font-size: 13px; margin: 16px 0 6px; color: #3a3f4b; }
+.hint { font-size: 12px; color: #8a8f9a; margin: 0 0 8px; }
+
+.grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.cell {
+  display: flex; flex-direction: column; gap: 4px;
+  border: 1px solid #d0d3d9; border-radius: 6px; padding: 4px; min-width: 92px;
+  background: #fbfbfd;
+}
+.cell .seg { display: flex; gap: 2px; }
+.cell button.t { flex: 1; padding: 6px 0; border: 1px solid #d0d3d9; background: #fff; border-radius: 4px; cursor: pointer; font-weight: 600; }
+.cell button.t.active { background: #4a7cff; color: #fff; border-color: #4a7cff; }
+.cell.t-D button.t[data-t="D"].active { background: #2e7d32; }
+.cell.t-U button.t[data-t="U"].active { background: #c62828; }
+.cell.t-rest button.t[data-t="rest"].active { background: #9e9e9e; }
+.cell.t-pluck button.t[data-t="pluck"].active { background: #6a1b9a; }
+.cell .role-row { display: flex; gap: 2px; flex-wrap: wrap; }
+.cell select, .cell input { font-size: 11px; padding: 3px 4px; border: 1px solid #e0e3e9; border-radius: 3px; }
+.cell .rm { align-self: flex-start; border: none; background: transparent; color: #c00; cursor: pointer; font-size: 14px; }
+.cell.playing { outline: 2px solid #ff9800; }
+
+.info { font-size: 12px; color: #6b7080; background: #f6f8fc; padding: 8px; border-radius: 4px; max-height: 120px; overflow: auto; }
+
+button.primary { background: #4a7cff; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+button.primary:hover { background: #3a6ae8; }
+button.danger { background: #fff; color: #c62828; border: 1px solid #c62828; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+button.play { background: #2e7d32; color: #fff; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+button { background: #fff; border: 1px solid #d0d3d9; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+.actions { display: flex; gap: 8px; }
+.editor:empty::before { content: "请选择或新建一个模板"; color: #9aa; }
