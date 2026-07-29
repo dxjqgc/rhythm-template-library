@@ -38,11 +38,22 @@ from .model import (
 )
 from .strum_patterns import (
     STRUM_PATTERNS,
+    PatternSource,
     SelectionContext,
     arrange_progression,
     enumerate_rhythm_patterns,
+    get_pattern_source,
+    instantiate_pattern,
     pattern_cost,
+    resolve_voicing,
+    set_pattern_source,
     to_json,
+)
+from .serialization import (
+    TemplateRepository,
+    dict_to_pattern,
+    pattern_to_dict,
+    seed_from_hardcoded,
 )
 from .string_role import (
     All,
@@ -72,6 +83,18 @@ __all__ = [
     "pattern_cost",
     "SelectionContext",
     "to_json",
+    # 数据源 seam（可注入，默认硬编码 STRUM_PATTERNS）
+    "PatternSource",
+    "set_pattern_source",
+    "get_pattern_source",
+    # 单模板实例化公开 helper（试听等）
+    "instantiate_pattern",
+    "resolve_voicing",
+    # 序列化 + 文本数据库仓库
+    "pattern_to_dict",
+    "dict_to_pattern",
+    "TemplateRepository",
+    "seed_from_hardcoded",
     # 弦角色（分解模板的弦序表达，按 voicing 实例化）
     "StringRole",
     "Root",

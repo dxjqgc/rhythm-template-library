@@ -43,7 +43,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 from chord_fingering import count_muted, enumerate_fingerings
 
@@ -65,9 +65,14 @@ if TYPE_CHECKING:
 
 __all__ = [
     "STRUM_PATTERNS",
+    "PatternSource",
+    "set_pattern_source",
+    "get_pattern_source",
     "enumerate_rhythm_patterns",
     "arrange_progression",
     "pattern_cost",
+    "instantiate_pattern",
+    "resolve_voicing",
     "SelectionContext",
     "to_json",
 ]
@@ -348,6 +353,80 @@ STRUM_PATTERNS: list[StrumPattern] = [
 ]
 
 
+# --- 数据源 seam（可注入，默认硬编码）-----------------------------------
+#
+# 选型器不直接读模块级 STRUM_PATTERNS，而读一个「数据源」协议。默认源背靠硬编码列表
+# （集成项目无感），web 管理器启动时调 set_pattern_source 注入数据库源，使编辑后的模板
+# 立即生效。STRUM_PATTERNS 常量始终保留，作为兜底与未注入源时的默认行为。
+
+
+@runtime_checkable
+class PatternSource(Protocol):
+    """节奏型数据源协议：返回当前可用的模板列表。
+
+    默认实现背靠硬编码 :data:`STRUM_PATTERNS`；web 管理器提供数据库源实现注入。
+    """
+
+    def patterns(self) -> list[StrumPattern]: ...
+
+
+class _ListPatternSource:
+    """背靠一个固定列表的数据源（默认实现）。"""
+
+    def __init__(self, patterns: list[StrumPattern]) -> None:
+        self._patterns = patterns
+
+    def patterns(self) -> list[StrumPattern]:
+        return self._patterns
+
+
+# 进程级默认源。set_pattern_source 是全局状态，仅适用于单用户本地工具（如 web 管理器）。
+_default_source: PatternSource = _ListPatternSource(STRUM_PATTERNS)
+
+
+def set_pattern_source(source: PatternSource | None) -> None:
+    """注入数据源。``None`` 重置为硬编码 :data:`STRUM_PATTERNS` 默认源。
+
+    进程级全局状态：web 管理器在启动时调一次注入数据库源；普通集成项目无需调用，
+    自动用硬编码默认源，行为与改 seam 前完全一致。多进程并发安全不在范围内。
+    """
+    global _default_source
+    _default_source = source if source is not None else _ListPatternSource(STRUM_PATTERNS)
+
+
+def get_pattern_source() -> PatternSource:
+    """取当前数据源（主要用于测试与自省）。"""
+    return _default_source
+
+
+def _boom_chick_fallback() -> StrumPattern:
+    """取兜底 boom-chick：优先当前数据源，缺失时退回硬编码列表，再缺失则内联构造，
+    保证总不崩。
+
+    - 当前数据源有 boom-chick → 用之；
+    - 否则退回硬编码 :data:`STRUM_PATTERNS`；
+    - 若硬编码也被改/删（极端），内联构造一个最小 boom-chick，绝不抛 ``StopIteration``。
+    """
+    try:
+        return next(p for p in _default_source.patterns() if p.name == "boom-chick")
+    except StopIteration:
+        pass
+    try:
+        return next(p for p in STRUM_PATTERNS if p.name == "boom-chick")
+    except StopIteration:
+        # 硬编码也被改：内联兜底，兑现「保证总不崩」。
+        return StrumPattern(
+            name="boom-chick",
+            grid_motif=(Stroke("D"), None, None, None),
+            motif_beats=1,
+            min_beats=1,
+            ideal_beats=(2, 4),
+            sections=("verse",),
+            style="folk",
+            technique="strum",
+        )
+
+
 # --- 打分权重（越大越劝退） ----------------------------------------------
 
 W_SECTION = 2.5        # 段落不契合：当前段落不在模板 sections 里时的固定罚分
@@ -581,7 +660,7 @@ def _chord_candidates(
     （取 Top-K 做 DP）共用，避免候选生成逻辑重复。
     """
     scored: list[tuple[float, StrumPattern]] = []
-    for pattern in STRUM_PATTERNS:
+    for pattern in _default_source.patterns():
         if beats < pattern.min_beats:
             continue
         cost = pattern_cost(
@@ -693,7 +772,7 @@ def enumerate_rhythm_patterns(
         if not scored:
             # 拍数门槛把所有模板都筛掉了（理论不会发生，最小 min_beats=1）。
             # 退路：用 boom-chick（min_beats=1）兜底，保证总有输出。
-            fallback = next(p for p in STRUM_PATTERNS if p.name == "boom-chick")
+            fallback = _boom_chick_fallback()
             events.append(_instantiate_event(chord, beats, fallback, voicings[i]))
             continue
 
@@ -821,7 +900,7 @@ def arrange_progression(
         )
         if not scored:
             # 拍数门槛兜底（理论不会发生）：塞 boom-chick 单候选，保证 DP 有路径。
-            fallback = next(p for p in STRUM_PATTERNS if p.name == "boom-chick")
+            fallback = _boom_chick_fallback()
             scored = [(0.0, fallback)]
         scored.sort(key=lambda pair: pair[0])
         scored = scored[:k]
@@ -861,6 +940,59 @@ def arrange_progression(
         for i in range(n)
     ]
     return events
+
+
+# --- 单模板实例化公开 helper（供 web 试听等场景，不碰私有内部）────────────
+
+
+def resolve_voicing(
+    chord: str, fretboard: "Fretboard", max_stretch: int = 4
+) -> VoicingData | None:
+    """取某和弦首选指法的 voicing（公开版 :func:`_resolve_voicing`）。
+
+    供需要弦→midi 映射的调用方（如 web 试听提取音符）使用，无需触及私有内部函数。
+    返回 :class:`VoicingData`（含 ``positions`` 与 ``(弦号, midi)``）；指法库找不到
+    可行 voicing 时返回 ``None``。
+    """
+    return _resolve_voicing(chord, fretboard, max_stretch)
+
+
+def instantiate_pattern(
+    pattern: StrumPattern,
+    chord: str,
+    fretboard: "Fretboard",
+    beats: int,
+    *,
+    max_stretch: int = 4,
+) -> RhythmEvent:
+    """把**单个**模板在某和弦上实例化成 :class:`RhythmEvent`（供试听等单点场景）。
+
+    与 :func:`enumerate_rhythm_patterns` / :func:`arrange_progression`（整段选型）不同，
+    本函数不做选型，直接把给定 ``pattern`` 平铺到 ``beats`` 拍、按该和弦首选 voicing
+    实例化 Pluck 弦号。是 :func:`_instantiate_event` 的公开薄包装：先解析 voicing，
+    再平铺栅格、实例化弦角色。
+
+    Parameters
+    ----------
+    pattern
+        要实例化的模板。
+    chord
+        和弦符号，如 ``"C"`` / ``"G"``。
+    fretboard
+        ``pytheory.Fretboard``，标准调弦用 ``Fretboard.guitar()``。
+    beats
+        和弦占拍数；模板平铺/截断到 ``4 * beats`` 格。
+    max_stretch
+        取首选指法时的最大跨度约束。
+
+    Returns
+    -------
+    RhythmEvent
+        ``.grid`` 已实例化 Pluck 弦号（解析失败的 role 保持 ``None``），``.fingering``
+        派生指法动作序列。
+    """
+    voicing = _resolve_voicing(chord, fretboard, max_stretch)
+    return _instantiate_event(chord, beats, pattern, voicing)
 
 
 def to_json(
