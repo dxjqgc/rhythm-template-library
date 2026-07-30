@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>节奏型模板管理</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header>
+  <h1>节奏型模板管理</h1>
+  <span id="status" class="status"></span>
+</header>
+
+<section class="layout">
+  <!-- 左：模板列表 -->
+  <div class="panel">
+    <div class="panel-head">
+      <h2>模板库</h2>
+      <button id="new-btn" class="primary">+ 新建</button>
+    </div>
+    <input id="search" class="search" placeholder="搜索名称…">
+    <table id="template-table">
+      <thead><tr><th>名称</th><th>技法</th><th>拍</th><th>风格</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- 右：编辑器 + 试听 -->
+  <div class="panel editor" id="editor">
+    <div class="panel-head">
+      <h2>编辑</h2>
+      <div class="actions">
+        <button id="play-btn" class="play">▶ 试听</button>
+        <button id="stop-btn">■</button>
+        <button id="save-btn" class="primary">保存</button>
+        <button id="delete-btn" class="danger">删除</button>
+      </div>
+    </div>
+
+    <div class="form">
+      <label>ID <input id="f-id" disabled></label>
+      <label>名称 <input id="f-name"></label>
+      <label>技法
+        <select id="f-technique"><option value="strum">strum 扫弦</option><option value="arpeggio">arpeggio 分解</option></select>
+      </label>
+      <label>风格
+        <select id="f-style"><option>folk</option><option>pop</option><option>rock</option></select>
+      </label>
+      <label>动机拍数 <input id="f-motif" type="number" min="1" max="4" value="1"></label>
+      <label>门槛拍数 <input id="f-min" type="number" min="1" value="1"></label>
+      <label>理想拍数 <input id="f-ideal" placeholder="如 2,4"></label>
+      <label>段落 <input id="f-sections" placeholder="如 verse,chorus"></label>
+      <label>位置 <input id="f-positions" placeholder="如 tail（空=中立）"></label>
+    </div>
+
+    <h3>动机栅格（每拍 4 格 16 分）</h3>
+    <p class="hint">每格可选：下扫 D / 上扫 U / 休止 . / 拨弦 P（分解）。拨弦可设弦角色。</p>
+    <div id="grid" class="grid"></div>
+    <button id="add-cell-btn">+ 追加一格</button>
+    <button id="add-beat-btn">+ 追加一拍</button>
+
+    <h3>试听</h3>
+    <div class="form">
+      <label>和弦 <input id="p-chord" value="C"></label>
+      <label>拍数 <input id="p-beats" type="number" min="1" value="4"></label>
+      <label>BPM <input id="p-bpm" type="number" min="30" max="240" value="90"></label>
+    </div>
+    <pre id="notelist-info" class="info"></pre>
+  </div>
+</section>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
