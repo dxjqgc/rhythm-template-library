@@ -6,6 +6,7 @@
 """
 
 from rhythm_pattern import STRUM_PATTERNS, enumerate_rhythm_patterns
+from rhythm_pattern.model import Rest
 from pytheory import Fretboard
 
 
@@ -31,8 +32,8 @@ TOP_N = 3
 
 
 def _fmt(cells) -> str:
-    """栅格可视化：D/U/. 一格一字符，每 4 格（一拍）用空格隔开。"""
-    s = "".join(str(c) if c is not None else "." for c in cells)
+    """栅格可视化：把每个动作按其 duration 展开成 16 分字符（D/U/.），每拍 4 格用空格隔开。"""
+    s = "".join((str(c) if not isinstance(c, Rest) else ".") * c.duration for c in cells)
     return " ".join(s[i : i + 4] for i in range(0, len(s), 4))
 
 
@@ -91,16 +92,17 @@ def check_min_beats(gtr) -> None:
 
 
 def check_grid_length(gtr) -> None:
-    """栅格长度 = 4 × 拍数，每拍 4 个 16 分位置。"""
+    """栅格总时值 = 4 × 拍数，每拍 4 个 16 分位置。"""
     print("\n=== 栅格对齐 ===")
     for beats in (1, 2, 3, 4):
         e = enumerate_rhythm_patterns([("C", beats)], gtr, section="chorus", style="pop")[0]
-        assert len(e.grid.cells) == 4 * beats, (
-            f"占 {beats} 拍应得 {4 * beats} 格，实际 {len(e.grid.cells)}"
+        total = sum(c.duration for c in e.grid.cells)
+        assert total == 4 * beats, (
+            f"占 {beats} 拍应得总时值 {4 * beats}，实际 {total}"
         )
         assert e.grid.n_beats == beats, f"n_beats 应为 {beats}，实际 {e.grid.n_beats}"
-        print(f"  {beats}拍 -> {len(e.grid.cells)}格 OK  [{_fmt(e.grid.cells)}]")
-    print("  断言通过: 任意拍数栅格长度 = 4 × 拍数")
+        print(f"  {beats}拍 -> 总时值 {total} OK  [{_fmt(e.grid.cells)}]")
+    print("  断言通过: 任意拍数栅格总时值 = 4 × 拍数")
 
 
 def check_progression_continuity(gtr) -> None:

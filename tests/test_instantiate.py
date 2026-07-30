@@ -126,7 +126,7 @@ def test_boom_chick_fallback_never_crashes():
         fb = _boom_chick_fallback()
         assert fb.name == "boom-chick"
         assert fb.min_beats == 1  # 可作 fallback（min_beats=1）
-        assert len(fb.grid_motif) == 4
+        assert sum(c.duration for c in fb.grid_motif) == 4
     finally:
         sp.STRUM_PATTERNS[:] = saved
         set_pattern_source(None)  # 重置默认源

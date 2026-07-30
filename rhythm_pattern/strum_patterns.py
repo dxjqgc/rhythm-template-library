@@ -47,7 +47,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 from chord_fingering import count_muted, enumerate_fingerings
 
-from .model import Cell, Pluck, Position, RhythmEvent, RhythmGrid, Stroke, StrumPattern
+from .model import Cell, Pluck, Position, Rest, RhythmEvent, RhythmGrid, Stroke, StrumPattern
 from .string_role import (
     All,
     Fifth,
@@ -157,17 +157,12 @@ class SelectionContext:
 
 # --- 模板库 ---------------------------------------------------------------
 
-D = Stroke("D")
-U = Stroke("U")
-REST: Cell | None = None
-
-
 STRUM_PATTERNS: list[StrumPattern] = [
     # ── 扫弦模板 ──────────────────────────────────────────────
     StrumPattern(
         name="boom-chick",
-        # 1 拍动机：下扫（根音区）-休止-休止-休止。最简的根-拍交替，民谣/乡村骨架。
-        grid_motif=(D, REST, REST, REST),
+        # 1 拍动机：下扫（根音区）持续一拍。最简的根-拍交替，民谣/乡村骨架。
+        grid_motif=(Stroke("D", 4),),
         motif_beats=1,
         min_beats=1,
         ideal_beats=(2, 4),
@@ -176,8 +171,8 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="folk D-DU",
-        # 2 拍动机：第 1 拍「下 休 休 休」，第 2 拍「下 休 上 休」。完整 D.DU 周期。
-        grid_motif=(D, REST, REST, REST, D, REST, U, REST),
+        # 2 拍动机：第 1 拍「下」持续一拍，第 2 拍「下-上」（下 16 分 + 上 8 分）。完整 D.DU 周期。
+        grid_motif=(Stroke("D", 4), Stroke("D", 1), Stroke("U", 3)),
         motif_beats=2,
         min_beats=2,
         ideal_beats=(2, 4),
@@ -186,8 +181,8 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="pop 8th-notes",
-        # 1 拍动机：下-上 8 分音符交替，流行副歌最常见。
-        grid_motif=(D, U, D, U),
+        # 1 拍动机：下-上 16 分音符交替 ×4，流行副歌最常见（密集下上交替）。
+        grid_motif=(Stroke("D", 1), Stroke("U", 1), Stroke("D", 1), Stroke("U", 1)),
         motif_beats=1,
         min_beats=1,
         ideal_beats=(1, 2, 4),
@@ -196,8 +191,8 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="rock 8th down",
-        # 1 拍动机：下-休-下-休，全下扫重拍，摇滚 power 思路。
-        grid_motif=(D, REST, D, REST),
+        # 1 拍动机：下-下各 8 分，全下扫重拍，摇滚 power 思路。
+        grid_motif=(Stroke("D", 2), Stroke("D", 2)),
         motif_beats=1,
         min_beats=1,
         ideal_beats=(1, 2, 4),
@@ -209,10 +204,10 @@ STRUM_PATTERNS: list[StrumPattern] = [
         # 经典 4/4 流行扫弦 ↓ ↓↑ ↑ ↓↑：4 拍一个完整周期动机。
         # 每拍第 1 个 16 分为强拍下扫，弱拍加下扫/上扫回扫，构成「下 下上 上 下上」。
         grid_motif=(
-            D, REST, REST, REST,   # 1 拍：下
-            D, REST, U, REST,      # 2 拍：下-上
-            U, REST, REST, REST,   # 3 拍：上
-            D, REST, U, REST,      # 4 拍：下-上
+            Stroke("D", 4),             # 1 拍：下
+            Stroke("D", 1), Stroke("U", 3),  # 2 拍：下-上
+            Stroke("U", 4),             # 3 拍：上
+            Stroke("D", 1), Stroke("U", 3),  # 4 拍：下-上
         ),
         motif_beats=4,
         min_beats=4,
@@ -224,7 +219,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         name="D-D-DU (1拍16分)",
         # 「下 下下上」1 拍 16 分版：4 个动作挤在一拍内，节奏紧凑、推动力强，
         # 常作副歌收束或过门。区别于 pop 8th-notes 的均匀 DUDU，这里第二拍密度更高。
-        grid_motif=(D, D, D, U),
+        grid_motif=(Stroke("D", 1), Stroke("D", 1), Stroke("D", 1), Stroke("U", 1)),
         motif_beats=1,
         min_beats=1,
         ideal_beats=(1, 2),
@@ -233,8 +228,8 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="reggae off-beat",
-        # 1 拍动机：休-上-休-休，反拍上扫，雷鬼/Ska 慢扫。
-        grid_motif=(REST, U, REST, REST),
+        # 1 拍动机：休 16 分 + 上扫 8 分附点（持续到拍末），反拍上扫，雷鬼/Ska 慢扫。
+        grid_motif=(Rest(1), Stroke("U", 3)),
         motif_beats=1,
         min_beats=1,
         ideal_beats=(1, 2),
@@ -244,11 +239,16 @@ STRUM_PATTERNS: list[StrumPattern] = [
     # ── 分解模板（Pluck 带 StringRole，选型时按 voicing 实例化弦号）─────────
     StrumPattern(
         name="root-5-top2 (1拍)",
-        # 「5,3,21」式 1 拍动机：根音(16分)-五音(16分)-顶两弦同拨(8分)。
+        # 「5,3,21」式 1 拍动机：根音(16分)-五音(16分)-顶两弦同拨(16分)-休(16分)。
         # 顶两弦用 TopN(2,'comfortable')，按 voicing 动态选：C 选 2-1 弦（顶音距合适、
         # 丰富），G 根音在 6 弦更低，选 3-2 弦收窄顶底音距、避免尖锐。一次拨多根弦
         # 靠 Pluck.strings 长度>1 表达。弦序随和弦走，固定弦号做不到。
-        grid_motif=(Pluck(role=Root()), Pluck(role=Fifth("avoid_bass")), Pluck(role=TopN(2, "comfortable")), REST),
+        grid_motif=(
+            Pluck(role=Root(), duration=1),
+            Pluck(role=Fifth("avoid_bass"), duration=1),
+            Pluck(role=TopN(2, "comfortable"), duration=1),
+            Rest(1),
+        ),
         motif_beats=1,
         min_beats=1,
         ideal_beats=(1, 2, 4),
@@ -263,8 +263,10 @@ STRUM_PATTERNS: list[StrumPattern] = [
         # 1弦E=三音(高八度)。故 5-3-2-3-1-3-2-3 = root-fifth-root(treble)-fifth-
         # third(treble)-fifth-root(treble)-fifth。音级角色随和弦走，换和弦自动映射弦号。
         grid_motif=(
-            Pluck(role=Root()), Pluck(role=Fifth()), Pluck(role=Root("treble")), Pluck(role=Fifth()),
-            Pluck(role=Third("treble")), Pluck(role=Fifth()), Pluck(role=Root("treble")), Pluck(role=Fifth()),
+            Pluck(role=Root(), duration=1), Pluck(role=Fifth(), duration=1),
+            Pluck(role=Root("treble"), duration=1), Pluck(role=Fifth(), duration=1),
+            Pluck(role=Third("treble"), duration=1), Pluck(role=Fifth(), duration=1),
+            Pluck(role=Root("treble"), duration=1), Pluck(role=Fifth(), duration=1),
         ),
         motif_beats=2,
         min_beats=2,
@@ -275,12 +277,14 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="53231323 (8分)",
-        # 同一指法 5-3-2-3-1-3-2-3 的 8 分版：8 个音各占 2 个 16 分位置 = 4 拍动机。
-        # 比 16 分版舒缓，适合慢板抒情段落。每个 Pluck 后跟一个 REST 占住 8 分时值。
+        # 同一指法 5-3-2-3-1-3-2-3 的 8 分版：8 个音各占 8 分（2 个 16 分位置）= 4 拍动机。
+        # 比 16 分版舒缓，适合慢板抒情段落。每个 Pluck 持续 8 分。
         # 音级角色同 16 分版（见上）。
         grid_motif=(
-            Pluck(role=Root()), REST, Pluck(role=Fifth()), REST, Pluck(role=Root("treble")), REST, Pluck(role=Fifth()), REST,
-            Pluck(role=Third("treble")), REST, Pluck(role=Fifth()), REST, Pluck(role=Root("treble")), REST, Pluck(role=Fifth()), REST,
+            Pluck(role=Root(), duration=2), Pluck(role=Fifth(), duration=2),
+            Pluck(role=Root("treble"), duration=2), Pluck(role=Fifth(), duration=2),
+            Pluck(role=Third("treble"), duration=2), Pluck(role=Fifth(), duration=2),
+            Pluck(role=Root("treble"), duration=2), Pluck(role=Fifth(), duration=2),
         ),
         motif_beats=4,
         min_beats=4,
@@ -293,7 +297,9 @@ STRUM_PATTERNS: list[StrumPattern] = [
         name="5323 (8分)",
         # 53231323 的前半截 5-3-2-3，4 个音各占 8 分 = 1 拍动机，循环两遍即 5323-5323。
         # 适合拍数不定的短和弦或快段落的分解。
-        grid_motif=(Pluck(role=Root()), REST, Pluck(role=Fifth()), REST),
+        grid_motif=(
+            Pluck(role=Root(), duration=2), Pluck(role=Fifth(), duration=2),
+        ),
         motif_beats=1,
         min_beats=1,
         ideal_beats=(1, 2, 4),
@@ -303,9 +309,9 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="arpeggio placeholder",
-        # 最简占位分解：1 拍拨一弦-休-休-休。role=None 的 Pluck，弦序不指定，
+        # 最简占位分解：1 拍拨一弦持续一拍。role=None 的 Pluck，弦序不指定，
         # 兼作技法基线测试用（technique_baseline 切分解时兜底）。
-        grid_motif=(Pluck(role=None), REST, REST, REST),
+        grid_motif=(Pluck(role=None, duration=4),),
         motif_beats=1,
         min_beats=1,
         ideal_beats=(2, 4),
@@ -316,14 +322,14 @@ STRUM_PATTERNS: list[StrumPattern] = [
     StrumPattern(
         name="arpeggio cadence (tail)",
         # 段落末和弦收束琶音：4 拍动机，低音->五音->三音->全拨收束。
-        # 每个音占 1 拍（4 个 16 分位置，发音 1 个 + 休止 3 个），舒缓收尾。
+        # 每个音占 1 拍（4 个 16 分位置），舒缓收尾。
         # 末拍用 All() 拨全部发音弦，相当于「拨弦版扫弦」做终止感。标 positions=("tail",)--
         # 仅在段落末和弦 0 罚分，其他位置吃 W_POSITION 被压下。
         grid_motif=(
-            Pluck(role=Root()), REST, REST, REST,
-            Pluck(role=Fifth("avoid_bass")), REST, REST, REST,
-            Pluck(role=Third()), REST, REST, REST,
-            Pluck(role=All()), REST, REST, REST,
+            Pluck(role=Root(), duration=4),
+            Pluck(role=Fifth("avoid_bass"), duration=4),
+            Pluck(role=Third(), duration=4),
+            Pluck(role=All(), duration=4),
         ),
         motif_beats=4,
         min_beats=4,
@@ -335,12 +341,12 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="arpeggio cadence short (tail)",
-        # 段落末和弦短收束琶音：2 拍动机，低音->五音->全拨收束。每个音占 8 分（2 个 16 分位置）。
+        # 段落末和弦短收束琶音：2 拍动机，低音->五音->全拨->全拨收束。每个音占 8 分（2 个 16 分位置）。
         # 补 4 拍版的缺口--段落尾和弦常是 2 拍甚至更短，4 拍 cadence 的 min_beats=4 进不了候选，
-        # 此版 min_beats=2 覆盖短尾和弦。末拍 All() 拨全部弦做终止感。标 positions=("tail",)。
+        # 此版 min_beats=2 覆盖短尾和弦。末两拍 All() 拨全部弦做终止感。标 positions=("tail",)。
         grid_motif=(
-            Pluck(role=Root()), REST, Pluck(role=Fifth("avoid_bass")), REST,
-            Pluck(role=All()), REST, Pluck(role=All()), REST,
+            Pluck(role=Root(), duration=2), Pluck(role=Fifth("avoid_bass"), duration=2),
+            Pluck(role=All(), duration=2), Pluck(role=All(), duration=2),
         ),
         motif_beats=2,
         min_beats=2,
@@ -417,7 +423,7 @@ def _boom_chick_fallback() -> StrumPattern:
         # 硬编码也被改：内联兜底，兑现「保证总不崩」。
         return StrumPattern(
             name="boom-chick",
-            grid_motif=(Stroke("D"), None, None, None),
+            grid_motif=(Stroke("D", 4),),
             motif_beats=1,
             min_beats=1,
             ideal_beats=(2, 4),
@@ -627,10 +633,10 @@ def _voicing_muted(voicing: VoicingData | None, fretboard: "Fretboard") -> tuple
 def _instantiate_plucks(grid: RhythmGrid, voicing: VoicingData | None) -> RhythmGrid:
     """把栅格里 Pluck 的 role 按 voicing 实例化成具体弦号，填进 Pluck.strings。
 
-    扫弦 (Stroke) 与休止 (None) 格不动。Pluck 格：``role`` 非 None 且 voicing 可用时，
-    调 ``role.resolve(voicing)`` 得弦号填入 ``strings``；解析失败或无 voicing 时，
-    ``strings`` 保持 ``None``（拨弦但弦未定，不阻塞输出）。模板层原 Pluck 不被修改--
-    本函数返回新栅格，event 持有实例化后的栅格。
+    扫弦 (Stroke) 与休止 (Rest) 格不动（duration 原样保留）。Pluck 格：``role`` 非 None
+    且 voicing 可用时，调 ``role.resolve(voicing)`` 得弦号填入 ``strings``；解析失败或无
+    voicing 时，``strings`` 保持 ``None``（拨弦但弦未定，不阻塞输出）。重建时 ``duration``
+    一并保留。模板层原 Pluck 不被修改--本函数返回新栅格，event 持有实例化后的栅格。
     """
     if voicing is None:
         return grid  # 无 voicing，Pluck.strings 保持 None。
@@ -639,8 +645,8 @@ def _instantiate_plucks(grid: RhythmGrid, voicing: VoicingData | None) -> Rhythm
         if isinstance(c, Pluck) and c.role is not None:
             resolved = c.role.resolve(voicing)
             # resolved 为 None 表示该 role 在此 voicing 上无法解析（如省了五音还取五音）。
-            # 保留 role、strings=None，栅格结构不变，仅弦序未定。
-            new_cells.append(Pluck(role=c.role, strings=resolved))
+            # 保留 role、strings=None，栅格结构不变，仅弦序未定。duration 保留。
+            new_cells.append(Pluck(role=c.role, strings=resolved, duration=c.duration))
         else:
             new_cells.append(c)
     return RhythmGrid(tuple(new_cells))

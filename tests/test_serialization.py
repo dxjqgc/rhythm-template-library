@@ -9,7 +9,7 @@ import json
 import pytest
 
 from rhythm_pattern import STRUM_PATTERNS
-from rhythm_pattern.model import Pluck, StrumPattern, Stroke
+from rhythm_pattern.model import Pluck, Rest, StrumPattern, Stroke
 from rhythm_pattern.serialization import (
     TemplateRepository,
     dict_to_pattern,
@@ -30,30 +30,30 @@ def test_hardcoded_roundtrip(pattern):
 
 
 def test_role_variants_roundtrip():
-    """各弦角色变体逐格往返。覆盖所有 region / span 组合 + All + 占位 None。"""
+    """各弦角色变体逐格往返。覆盖所有 region / span 组合 + All + 占位 None + Rest。"""
     cells = [
-        Pluck(role=Root("bass")),
-        Pluck(role=Root("treble")),
-        Pluck(role=Root("avoid_bass")),
-        Pluck(role=Root()),
-        Pluck(role=Third()),
-        Pluck(role=Fifth("avoid_bass")),
-        Pluck(role=Seventh()),
-        Pluck(role=TopN(2)),
-        Pluck(role=TopN(2, "comfortable")),
-        Pluck(role=TopN(2, "narrow")),
-        Pluck(role=All()),
-        Pluck(role=None),
-        Stroke("D"),
-        None,
-        None,
-        None,
+        Pluck(role=Root("bass"), duration=1),
+        Pluck(role=Root("treble"), duration=1),
+        Pluck(role=Root("avoid_bass"), duration=1),
+        Pluck(role=Root(), duration=1),
+        Pluck(role=Third(), duration=1),
+        Pluck(role=Fifth("avoid_bass"), duration=1),
+        Pluck(role=Seventh(), duration=1),
+        Pluck(role=TopN(2), duration=1),
+        Pluck(role=TopN(2, "comfortable"), duration=1),
+        Pluck(role=TopN(2, "narrow"), duration=1),
+        Pluck(role=All(), duration=1),
+        Pluck(role=None, duration=1),
+        Stroke("D", 1),
+        Rest(1),
+        Rest(1),
+        Rest(1),
     ]
     pat = StrumPattern(
         name="all-roles",
         grid_motif=tuple(cells),
-        motif_beats=len(cells) // 4,
-        min_beats=len(cells) // 4,
+        motif_beats=4,  # sum(duration)=16 = 4*4
+        min_beats=4,
         ideal_beats=(),
         sections=("verse",),
         style="folk",
@@ -105,7 +105,7 @@ def repo(tmp_path):
 
 def _sample(name="tmp-pattern"):
     return StrumPattern(
-        name=name, grid_motif=(Stroke("D"), None, None, None),
+        name=name, grid_motif=(Stroke("D", 4),),
         motif_beats=1, min_beats=1, ideal_beats=(2, 4),
         sections=("chorus",), style="pop", technique="strum",
     )

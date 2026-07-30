@@ -25,7 +25,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .model import Cell, Pluck, Stroke, StrumPattern
+from .model import Cell, Pluck, Rest, Stroke, StrumPattern
 from .string_role import All, Fifth, Root, Seventh, StringRole, Third, TopN
 
 if TYPE_CHECKING:
@@ -99,30 +99,31 @@ def _role_from_dict(d: dict | None) -> StringRole | None:
 
 
 def _cell_to_dict(cell: Cell) -> dict:
-    """把一格栅格编码成 dict。
+    """把一格栅格动作编码成 dict（含 ``duration``）。
 
-    - ``Stroke`` → ``{"type": "stroke", "direction": "D"/"U"}``
-    - ``None`` → ``{"type": "rest"}``
-    - ``Pluck`` → ``{"type": "pluck", "role": <role dict | null>}``（``strings`` 不存）
+    - ``Stroke`` → ``{"type": "stroke", "direction": "D"/"U", "duration": N}``
+    - ``Rest``  → ``{"type": "rest", "duration": N}``
+    - ``Pluck`` → ``{"type": "pluck", "role": <role dict | null>, "duration": N}``（``strings`` 不存）
     """
-    if cell is None:
-        return {"type": "rest"}
+    if isinstance(cell, Rest):
+        return {"type": "rest", "duration": cell.duration}
     if isinstance(cell, Stroke):
-        return {"type": "stroke", "direction": cell.direction}
+        return {"type": "stroke", "direction": cell.direction, "duration": cell.duration}
     if isinstance(cell, Pluck):
-        return {"type": "pluck", "role": _role_to_dict(cell.role)}
+        return {"type": "pluck", "role": _role_to_dict(cell.role), "duration": cell.duration}
     raise TypeError(f"不可序列化的栅格类型: {type(cell).__name__}")
 
 
 def _cell_from_dict(d: dict) -> Cell:
-    """从 dict 还原一格栅格。"""
+    """从 dict 还原一格栅格动作。``duration`` 缺省时取 1（向后兼容旧无 duration 记录）。"""
     t = d.get("type")
+    duration = d.get("duration", 1)
     if t == "rest":
-        return None
+        return Rest(duration)
     if t == "stroke":
-        return Stroke(d["direction"])
+        return Stroke(d["direction"], duration)
     if t == "pluck":
-        return Pluck(role=_role_from_dict(d.get("role")))
+        return Pluck(role=_role_from_dict(d.get("role")), duration=duration)
     raise ValueError(f"未知的栅格 type: {t!r}")
 
 
@@ -304,18 +305,91 @@ def seed_from_hardcoded(path: Path | str | None = None) -> Path:
     return repo.path
 
 
+def migrate_old_grid(cells: tuple) -> tuple[Cell, ...]:
+    """旧 None 格栅格 → 新显式时值动作序列（一次性迁移工具）。
+
+    旧模型里 ``None`` 兼表「延续」与「休止」，时值由位置推断。本函数按旧
+    :func:`~rhythm_pattern.model.fingering_sequence` 的逻辑投影到新模型：
+
+    - 发音格（旧 Stroke/Pluck）→ 同类动作，``duration`` = 到下一个发音格的距离
+      （吸收其后的 None 为延续）。这些 None 不再单列。
+    - None 段（发音前的真静默）→ :class:`Rest`，``duration`` = 连续 None 数。
+
+    供 ``--migrate-legacy`` 迁移用户旧 DB 自定义模板用。硬编码库已直接写成新格式，
+    不需调本函数。
+    """
+    out: list[Cell] = []
+    i = 0
+    n = len(cells)
+    while i < n:
+        c = cells[i]
+        if c is None:
+            j = i
+            while j < n and cells[j] is None:
+                j += 1
+            out.append(Rest(duration=j - i))
+            i = j
+        else:
+            j = i + 1
+            while j < n and cells[j] is None:
+                j += 1
+            old_dur = j - i
+            if isinstance(c, Stroke):
+                out.append(Stroke(c.direction, old_dur))
+            else:  # Pluck
+                out.append(Pluck(role=c.role, strings=c.strings, duration=old_dur))
+            i = j
+    return tuple(out)
+
+
+def migrate_legacy_db(path: Path | str | None = None) -> Path:
+    """把旧格式（None 格）数据库迁移到新格式（显式 duration）。
+
+    逐条读取记录，若某 cell dict 无 ``duration`` 键（旧格式），用 :func:`migrate_old_grid`
+    把它当作旧栅格迁移：旧 ``{"type":"rest"}`` 视为 None、旧 stroke/pluck 视为无 duration
+    的旧 cell。迁移后整表覆盖写回。已是新格式的记录原样保留。
+    """
+    repo = TemplateRepository(path)
+    records = repo._read_raw()  # noqa: SLF001 - 迁移需读原始记录
+    migrated: list[dict] = []
+    for rec in records:
+        motif = rec.get("grid_motif")
+        if isinstance(motif, list) and any("duration" not in c for c in motif):
+            # 旧格式：重建为旧 cell 列表再迁移。
+            old_cells = []
+            for c in motif:
+                t = c.get("type")
+                if t == "rest":
+                    old_cells.append(None)
+                elif t == "stroke":
+                    old_cells.append(Stroke(c["direction"]))
+                elif t == "pluck":
+                    old_cells.append(Pluck(role=_role_from_dict(c.get("role"))))
+            new_cells = [_cell_to_dict(x) for x in migrate_old_grid(tuple(old_cells))]
+            rec = {**rec, "grid_motif": new_cells}
+        migrated.append(rec)
+    repo._write_raw(migrated)  # noqa: SLF001
+    return repo.path
+
+
 def _main() -> None:
-    """``python -m rhythm_pattern.serialization --seed`` 入口。"""
+    """``python -m rhythm_pattern.serialization`` 入口。"""
     import argparse
 
     parser = argparse.ArgumentParser(description="节奏型模板数据库工具")
     parser.add_argument("--seed", action="store_true", help="从硬编码库导出模板到 JSON")
+    parser.add_argument("--migrate-legacy", action="store_true", help="迁移旧 None 格 DB 到新显式 duration 格式")
     parser.add_argument("--path", default=None, help="数据库文件路径")
     args = parser.parse_args()
     if args.seed:
         p = seed_from_hardcoded(args.path)
         n = len(TemplateRepository(p).load())
         print(f"已 seed {n} 个模板到 {p}")
+        return
+    if args.migrate_legacy:
+        p = migrate_legacy_db(args.path)
+        n = len(TemplateRepository(p).load())
+        print(f"已迁移 {n} 个模板到 {p}")
         return
     parser.print_help()
 

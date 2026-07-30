@@ -97,9 +97,9 @@ class TestGridAlignment:
 
     @pytest.mark.parametrize("beats", [1, 2, 3, 4, 5])
     def test_grid_length_is_four_times_beats(self, guitar, beats):
-        """栅格长度 = 4 × 拍数，且 n_beats 等于拍数。"""
+        """栅格总时值 = 4 × 拍数，且 n_beats 等于拍数。"""
         e = enumerate_rhythm_patterns([("C", beats)], guitar, section="chorus", style="pop")[0]
-        assert len(e.grid.cells) == 4 * beats
+        assert sum(c.duration for c in e.grid.cells) == 4 * beats
         assert e.grid.n_beats == beats
 
     def test_density_range(self, guitar):
@@ -111,16 +111,16 @@ class TestGridAlignment:
         assert e.grid.density > 0.0
 
     def test_grid_post_init_rejects_bad_length(self):
-        """RhythmGrid 拒绝非 4 倍数长度。"""
+        """RhythmGrid 拒绝非 4 倍数总时值。"""
         with pytest.raises(ValueError):
-            RhythmGrid((Stroke("D"), Stroke("U"), Stroke("D")))  # 3 格
+            RhythmGrid((Stroke("D", 1), Stroke("U", 1), Stroke("D", 1)))  # 总时值 3
 
     def test_pattern_post_init_rejects_bad_unit(self):
-        """StrumPattern 要求 grid_motif 长度 = 4 * motif_beats。"""
+        """StrumPattern 要求 grid_motif 总时值 = 4 * motif_beats。"""
         with pytest.raises(ValueError):
             StrumPattern(
                 name="bad",
-                grid_motif=(Stroke("D"),),  # motif_beats=1 应为 4 格
+                grid_motif=(Stroke("D", 1),),  # motif_beats=1 应总时值 4
                 motif_beats=1,
                 min_beats=1,
                 ideal_beats=(1,),
@@ -161,7 +161,7 @@ class TestStyleMismatch:
         # 4 拍 chorus + rock：没有 min_beats=4 的 rock 模板，应回退到 1 拍 rock 模板平铺。
         e = enumerate_rhythm_patterns([("C", 4)], guitar, section="chorus", style="rock")[0]
         assert e.beats == 4
-        assert len(e.grid.cells) == 16
+        assert sum(c.duration for c in e.grid.cells) == 16
         assert e.grid.n_beats == 4
 
 
@@ -173,17 +173,17 @@ class TestTemplateLibrary:
         assert len(STRUM_PATTERNS) >= 4
 
     def test_all_patterns_have_consistent_metadata(self):
-        """每个模板元数据齐全：grid_motif = 4*motif_beats 格，min_beats>=motif_beats，sections 非空，technique 与栅格内容一致。"""
+        """每个模板元数据齐全：grid_motif 总时值 = 4*motif_beats，min_beats>=motif_beats，sections 非空，technique 与栅格内容一致。"""
         for p in STRUM_PATTERNS:
-            assert len(p.grid_motif) == 4 * p.motif_beats, (
-                f"{p.name}: grid_motif 长度 {len(p.grid_motif)} != 4*{p.motif_beats}"
+            assert sum(c.duration for c in p.grid_motif) == 4 * p.motif_beats, (
+                f"{p.name}: grid_motif 总时值 {sum(c.duration for c in p.grid_motif)} != 4*{p.motif_beats}"
             )
             assert p.min_beats >= p.motif_beats
             assert len(p.sections) > 0
             assert p.style in {"folk", "pop", "rock"}
             assert p.technique in {"strum", "arpeggio"}
             # technique 与栅格内容一致：arpeggio 含 Pluck，strum 不含。
-            has_pluck = any(c is not None and not isinstance(c, Stroke) for c in p.grid_motif)
+            has_pluck = any(isinstance(c, Pluck) for c in p.grid_motif)
             assert has_pluck == p.is_arpeggio, (
                 f"{p.name}: technique={p.technique} 与栅格内容(含Pluck={has_pluck})不一致"
             )
@@ -200,37 +200,59 @@ class TestMotifTiling:
 
     def test_integer_multiple_tiles_full_motif(self):
         """beats 是 motif_beats 整数倍时，平铺完整动机。"""
-        # pop 8th-notes: motif 1 拍 (D,U,D,U)，占 4 拍应平铺 4 遍。
+        # pop 8th-notes: motif 1 拍 (4 个 duration=1 的 stroke)，占 4 拍应平铺 4 遍。
         p = next(p for p in STRUM_PATTERNS if p.name == "pop 8th-notes")
         grid = p.grid_for(4)
         assert grid.cells == p.grid_motif * 4
-        assert len(grid.cells) == 16
+        assert sum(c.duration for c in grid.cells) == 16
 
     def test_non_integer_multiple_truncates(self):
-        """beats 非整数倍时，平铺整数份动机 + 末尾取动机前缀截断。"""
-        # folk D-DU: motif 2 拍 (8 格)，占 3 拍 = 12 格：1 份完整动机 (8) + 动机前 4 格前缀。
+        """beats 非整数倍时，平铺整数份动机 + 末尾取动机前缀截断（按 duration 之和）。"""
+        # folk D-DU: motif 2 拍 (Stroke(D,4)+Stroke(D,1)+Stroke(U,3), 总时值 8)，占 3 拍 = 总时值 12：
+        # 1 份完整动机 (8) + 截断到总时值 4 的前缀 = 第一个 Stroke("D",4)。
         p = next(p for p in STRUM_PATTERNS if p.name == "folk D-DU")
         assert p.motif_beats == 2
         grid = p.grid_for(3)
-        assert len(grid.cells) == 12  # 3 拍 = 12 格
-        assert grid.cells == p.grid_motif + p.grid_motif[:4]  # 整动机 + 前缀截断
+        assert sum(c.duration for c in grid.cells) == 12  # 3 拍 = 12 个 16 分
+        assert grid.cells == p.grid_motif + (Stroke("D", 4),)  # 整动机 + 截断前缀
 
     def test_beats_shorter_than_motif_takes_prefix(self):
         """beats 短于动机时，取动机前缀（截断到不足一个动机）。"""
-        # pop D-DU-U-DU: motif 4 拍 (16 格)，占 1 拍取前 4 格。
+        # pop D-DU-U-DU: motif 4 拍 (总时值 16)，占 1 拍取总时值 4 的前缀 = 第一个 Stroke("D",4)。
         p = next(p for p in STRUM_PATTERNS if p.name == "pop D-DU-U-DU")
         grid = p.grid_for(1)
-        assert len(grid.cells) == 4
-        assert grid.cells == p.grid_motif[:4]
+        assert sum(c.duration for c in grid.cells) == 4
+        assert grid.cells == (Stroke("D", 4),)
 
     def test_grid_length_always_four_times_beats(self):
-        """任意拍数栅格长度恒为 4*beats，无论是否整数倍平铺。"""
+        """任意拍数栅格总时值恒为 4*beats，无论是否整数倍平铺。"""
         p = next(p for p in STRUM_PATTERNS if p.name == "53231323 (8分)")
         assert p.motif_beats == 4
         for beats in (4, 5, 6, 7, 8):
             grid = p.grid_for(beats)
-            assert len(grid.cells) == 4 * beats
+            assert sum(c.duration for c in grid.cells) == 4 * beats
             assert grid.n_beats == beats
+
+    def test_truncate_across_action_boundary(self):
+        """截断发生在动作中间时，边界动作 duration 被正确截断（不跨过整动作丢弃）。"""
+        # 4 拍动机 (总时值 16)：D(3)+D(2)+D(3)+D(3)+D(3)+D(2)。第一个动作 duration=3，
+        # 故取总时值 4 的前缀时，第二个 D(2) 会被切到 D(1)（3+1=4），而非整丢弃或越界。
+        motif = StrumPattern(
+            name="t",
+            grid_motif=(Stroke("D", 3), Stroke("D", 2), Stroke("D", 3), Stroke("D", 3), Stroke("D", 3), Stroke("D", 2)),
+            motif_beats=4, min_beats=4, ideal_beats=(4,), sections=("verse",), style="pop",
+        )
+        # beats=1 (need=4 <= 动机总时值 16)：前缀截断到 4 = D(3) + D(2 截到 1)。
+        grid = motif.grid_for(1)
+        assert sum(c.duration for c in grid.cells) == 4
+        assert grid.cells == (Stroke("D", 3), Stroke("D", 1))
+        # 末尾是原 D(2) 被截断成的 D(1)——截断切进了动作中间。
+        assert isinstance(grid.cells[-1], Stroke) and grid.cells[-1].duration == 1
+
+        # 对照：整数倍平铺不触发截断。beats=4 (need=16 == 动机总时值) 原样返回动机。
+        grid_full = motif.grid_for(4)
+        assert grid_full.cells == motif.grid_motif
+        assert sum(c.duration for c in grid_full.cells) == 16
 
 
 class TestTechniqueBaseline:
@@ -327,20 +349,19 @@ class TestStringRoles:
         from rhythm_pattern.strum_patterns import _instantiate_plucks
         # C 大三和弦无七音，Seventh 解析应失败。
         v = self._voicing(guitar, "C")
-        grid = RhythmGrid((Pluck(role=Seventh()), None, None, None))  # 1 拍 4 格
+        grid = RhythmGrid((Pluck(role=Seventh(), duration=4),))  # 1 拍 = 总时值 4
         out = _instantiate_plucks(grid, v)
         pluck = next(c for c in out.cells if isinstance(c, Pluck))
         assert pluck.strings is None, "七音在 C 大三和弦上解析失败，strings 应为 None"
 
     def test_instantiate_preserves_strokes_and_rests(self, guitar):
-        """实例化只动 Pluck，Stroke 与 None 格原样保留。"""
+        """实例化只动 Pluck，Stroke 与 Rest 格原样保留（含 duration）。"""
         from rhythm_pattern import Root
         from rhythm_pattern.model import RhythmGrid, Stroke
         from rhythm_pattern.strum_patterns import _instantiate_plucks
         v = self._voicing(guitar, "C")
-        original = RhythmGrid((Stroke("D"), None, Pluck(role=Root()), None))  # 1 拍 4 格
+        original = RhythmGrid((Stroke("D", 2), Pluck(role=Root(), duration=2)))  # 1 拍 = 总时值 4
         out = _instantiate_plucks(original, v)
-        assert out.cells[0] == Stroke("D")
-        assert out.cells[1] is None
-        assert isinstance(out.cells[2], Pluck) and out.cells[2].strings is not None
-        assert out.cells[3] is None
+        assert out.cells[0] == Stroke("D", 2)
+        assert isinstance(out.cells[1], Pluck) and out.cells[1].strings is not None
+        assert out.cells[1].duration == 2  # duration 保留

@@ -5,16 +5,8 @@
     "grid_motif": [
       {
         "type": "stroke",
-        "direction": "D"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
+        "direction": "D",
+        "duration": 4
       }
     ],
     "motif_beats": 1,
@@ -36,30 +28,18 @@
     "grid_motif": [
       {
         "type": "stroke",
-        "direction": "D"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
+        "direction": "D",
+        "duration": 4
       },
       {
         "type": "stroke",
-        "direction": "D"
-      },
-      {
-        "type": "rest"
+        "direction": "D",
+        "duration": 1
       },
       {
         "type": "stroke",
-        "direction": "U"
-      },
-      {
-        "type": "rest"
+        "direction": "U",
+        "duration": 3
       }
     ],
     "motif_beats": 2,
@@ -82,19 +62,23 @@
     "grid_motif": [
       {
         "type": "stroke",
-        "direction": "D"
+        "direction": "D",
+        "duration": 1
       },
       {
         "type": "stroke",
-        "direction": "U"
+        "direction": "U",
+        "duration": 1
       },
       {
         "type": "stroke",
-        "direction": "D"
+        "direction": "D",
+        "duration": 1
       },
       {
         "type": "stroke",
-        "direction": "U"
+        "direction": "U",
+        "duration": 1
       }
     ],
     "motif_beats": 1,
@@ -118,17 +102,13 @@
     "grid_motif": [
       {
         "type": "stroke",
-        "direction": "D"
-      },
-      {
-        "type": "rest"
+        "direction": "D",
+        "duration": 2
       },
       {
         "type": "stroke",
-        "direction": "D"
-      },
-      {
-        "type": "rest"
+        "direction": "D",
+        "duration": 2
       }
     ],
     "motif_beats": 1,
@@ -151,57 +131,33 @@
     "grid_motif": [
       {
         "type": "stroke",
-        "direction": "D"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
+        "direction": "D",
+        "duration": 4
       },
       {
         "type": "stroke",
-        "direction": "D"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "stroke",
-        "direction": "U"
-      },
-      {
-        "type": "rest"
+        "direction": "D",
+        "duration": 1
       },
       {
         "type": "stroke",
-        "direction": "U"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
+        "direction": "U",
+        "duration": 3
       },
       {
         "type": "stroke",
-        "direction": "D"
-      },
-      {
-        "type": "rest"
+        "direction": "U",
+        "duration": 4
       },
       {
         "type": "stroke",
-        "direction": "U"
+        "direction": "D",
+        "duration": 1
       },
       {
-        "type": "rest"
+        "type": "stroke",
+        "direction": "U",
+        "duration": 3
       }
     ],
     "motif_beats": 4,
@@ -222,19 +178,23 @@
     "grid_motif": [
       {
         "type": "stroke",
-        "direction": "D"
+        "direction": "D",
+        "duration": 1
       },
       {
         "type": "stroke",
-        "direction": "D"
+        "direction": "D",
+        "duration": 1
       },
       {
         "type": "stroke",
-        "direction": "D"
+        "direction": "D",
+        "duration": 1
       },
       {
         "type": "stroke",
-        "direction": "U"
+        "direction": "U",
+        "duration": 1
       }
     ],
     "motif_beats": 1,
@@ -256,17 +216,13 @@
     "name": "reggae off-beat",
     "grid_motif": [
       {
-        "type": "rest"
+        "type": "rest",
+        "duration": 1
       },
       {
         "type": "stroke",
-        "direction": "U"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
+        "direction": "U",
+        "duration": 3
       }
     ],
     "motif_beats": 1,
@@ -292,14 +248,16 @@
         "role": {
           "kind": "root",
           "region": null
-        }
+        },
+        "duration": 1
       },
       {
         "type": "pluck",
         "role": {
           "kind": "fifth",
           "region": "avoid_bass"
-        }
+        },
+        "duration": 1
       },
       {
         "type": "pluck",
@@ -307,10 +265,12 @@
           "kind": "topn",
           "n": 2,
           "span": "comfortable"
-        }
+        },
+        "duration": 1
       },
       {
-        "type": "rest"
+        "type": "rest",
+        "duration": 1
       }
     ],
     "motif_beats": 1,
@@ -338,56 +298,64 @@
         "role": {
           "kind": "root",
           "region": null
-        }
+        },
+        "duration": 1
       },
       {
         "type": "pluck",
         "role": {
           "kind": "fifth",
           "region": null
-        }
+        },
+        "duration": 1
       },
       {
         "type": "pluck",
         "role": {
           "kind": "root",
           "region": "treble"
-        }
+        },
+        "duration": 1
       },
       {
         "type": "pluck",
         "role": {
           "kind": "fifth",
           "region": null
-        }
+        },
+        "duration": 1
       },
       {
         "type": "pluck",
         "role": {
           "kind": "third",
           "region": "treble"
-        }
+        },
+        "duration": 1
       },
       {
         "type": "pluck",
         "role": {
           "kind": "fifth",
           "region": null
-        }
+        },
+        "duration": 1
       },
       {
         "type": "pluck",
         "role": {
           "kind": "root",
           "region": "treble"
-        }
+        },
+        "duration": 1
       },
       {
         "type": "pluck",
         "role": {
           "kind": "fifth",
           "region": null
-        }
+        },
+        "duration": 1
       }
     ],
     "motif_beats": 2,
@@ -414,80 +382,64 @@
         "role": {
           "kind": "root",
           "region": null
-        }
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 2
       },
       {
         "type": "pluck",
         "role": {
           "kind": "fifth",
           "region": null
-        }
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 2
       },
       {
         "type": "pluck",
         "role": {
           "kind": "root",
           "region": "treble"
-        }
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 2
       },
       {
         "type": "pluck",
         "role": {
           "kind": "fifth",
           "region": null
-        }
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 2
       },
       {
         "type": "pluck",
         "role": {
           "kind": "third",
           "region": "treble"
-        }
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 2
       },
       {
         "type": "pluck",
         "role": {
           "kind": "fifth",
           "region": null
-        }
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 2
       },
       {
         "type": "pluck",
         "role": {
           "kind": "root",
           "region": "treble"
-        }
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 2
       },
       {
         "type": "pluck",
         "role": {
           "kind": "fifth",
           "region": null
-        }
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 2
       }
     ],
     "motif_beats": 4,
@@ -512,20 +464,16 @@
         "role": {
           "kind": "root",
           "region": null
-        }
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 2
       },
       {
         "type": "pluck",
         "role": {
           "kind": "fifth",
           "region": null
-        }
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 2
       }
     ],
     "motif_beats": 1,
@@ -549,16 +497,8 @@
     "grid_motif": [
       {
         "type": "pluck",
-        "role": null
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
+        "role": null,
+        "duration": 4
       }
     ],
     "motif_beats": 1,
@@ -585,63 +525,31 @@
         "role": {
           "kind": "root",
           "region": null
-        }
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 4
       },
       {
         "type": "pluck",
         "role": {
           "kind": "fifth",
           "region": "avoid_bass"
-        }
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 4
       },
       {
         "type": "pluck",
         "role": {
           "kind": "third",
           "region": null
-        }
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 4
       },
       {
         "type": "pluck",
         "role": {
           "kind": "all"
-        }
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 4
       }
     ],
     "motif_beats": 4,
@@ -669,38 +577,30 @@
         "role": {
           "kind": "root",
           "region": null
-        }
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 2
       },
       {
         "type": "pluck",
         "role": {
           "kind": "fifth",
           "region": "avoid_bass"
-        }
-      },
-      {
-        "type": "rest"
-      },
-      {
-        "type": "pluck",
-        "role": {
-          "kind": "all"
-        }
-      },
-      {
-        "type": "rest"
+        },
+        "duration": 2
       },
       {
         "type": "pluck",
         "role": {
           "kind": "all"
-        }
+        },
+        "duration": 2
       },
       {
-        "type": "rest"
+        "type": "pluck",
+        "role": {
+          "kind": "all"
+        },
+        "duration": 2
       }
     ],
     "motif_beats": 2,
@@ -725,27 +625,47 @@
     "name": "my-pattern-test-1",
     "grid_motif": [
       {
-        "type": "stroke",
-        "direction": "D"
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": null
+        },
+        "duration": 2
       },
       {
-        "type": "rest"
+        "type": "pluck",
+        "role": {
+          "kind": "third",
+          "region": null
+        },
+        "duration": 2
       },
       {
-        "type": "rest"
+        "type": "pluck",
+        "role": {
+          "kind": "topn",
+          "n": 2,
+          "span": "comfortable"
+        },
+        "duration": 2
       },
       {
-        "type": "rest"
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": "treble"
+        },
+        "duration": 2
       }
     ],
-    "motif_beats": 1,
-    "min_beats": 1,
+    "motif_beats": 2,
+    "min_beats": 2,
     "ideal_beats": [],
     "sections": [
       "chorus"
     ],
     "style": "pop",
-    "technique": "strum",
+    "technique": "arpeggio",
     "positions": []
   }
 ]

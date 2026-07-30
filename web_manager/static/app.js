@@ -97,17 +97,18 @@ const SPANS = ["", "comfortable", "narrow"];
 // 把后端 grid_motif（cell dicts）转成内部表示
 function cellsFromData(cells) {
   return cells.map(c => {
-    if (c.type === "stroke") return { type: "stroke", direction: c.direction };
-    if (c.type === "rest") return { type: "rest" };
-    if (c.type === "pluck") return { type: "pluck", role: c.role || null };
-    return { type: "rest" };
+    const cell = { type: c.type, duration: c.duration || 1 };  // duration 默认 1 兼容旧存档
+    if (c.type === "stroke") cell.direction = c.direction;
+    if (c.type === "pluck") cell.role = c.role || null;
+    return cell;
   });
 }
 function cellsToData(cells) {
   return cells.map(c => {
-    if (c.type === "stroke") return { type: "stroke", direction: c.direction };
-    if (c.type === "pluck") return { type: "pluck", role: c.role };
-    return { type: "rest" };
+    const out = { type: c.type, duration: c.duration };
+    if (c.type === "stroke") out.direction = c.direction;
+    if (c.type === "pluck") out.role = c.role;
+    return out;
   });
 }
 
@@ -161,8 +162,17 @@ function makeCellEl(cell, idx) {
     div.appendChild(makeRoleEl(cell));
   }
 
+  // 时值输入（占多少 16 分位置）。每个动作/休止自带 duration，逐格控制延续/断音。
+  const durWrap = document.createElement("div"); durWrap.className = "dur-row";
+  const durLbl = document.createElement("span"); durLbl.textContent = "时值"; durLbl.style.fontSize = "11px";
+  const durInp = document.createElement("input"); durInp.type = "number"; durInp.min = 1; durInp.max = 16; durInp.value = cell.duration || 1;
+  durInp.style.width = "42px";
+  durInp.onchange = () => { cell.duration = Math.max(1, parseInt(durInp.value, 10) || 1); durInp.value = cell.duration; updateMotifSum(); };
+  durWrap.appendChild(durLbl); durWrap.appendChild(durInp);
+  div.appendChild(durWrap);
+
   const rm = document.createElement("button"); rm.className = "rm"; rm.textContent = "✕";
-  rm.onclick = () => { gridCells.splice(idx, 1); paintGrid(); };
+  rm.onclick = () => { gridCells.splice(idx, 1); paintGrid(); updateMotifSum(); };
   div.appendChild(rm);
   return div;
 }
@@ -254,7 +264,7 @@ function newTemplate() {
   current = {
     id, name: id, technique: "strum", style: "pop",
     motif_beats: motif, min_beats: motif, ideal_beats: [], sections: ["chorus"], positions: [],
-    grid_motif: [{ type: "stroke", direction: "D" }, { type: "rest" }, { type: "rest" }, { type: "rest" }],
+    grid_motif: [{ type: "stroke", direction: "D", duration: 4 }],
   };
   // 先建后端记录，再填表单
   api("POST", "/api/templates", { id, template: readFormOnInit() }).then(() => {
@@ -280,8 +290,19 @@ function readFormOnInit() {
 }
 
 // ── 追加格 ───────────────────────────────────────────────────────────
-$("add-cell-btn").onclick = () => { gridCells.push({ type: "rest" }); paintGrid(); };
-$("add-beat-btn").onclick = () => { for (let i = 0; i < 4; i++) gridCells.push({ type: "rest" }); paintGrid(); };
+$("add-cell-btn").onclick = () => { gridCells.push({ type: "rest", duration: 1 }); paintGrid(); updateMotifSum(); };
+$("add-beat-btn").onclick = () => { gridCells.push({ type: "rest", duration: 4 }); paintGrid(); updateMotifSum(); };
+
+// 动机时值之和 vs 4*motif_beats 显示（后端 __post_init__ 要求 sum==4*motif）。
+function motifTotal() { return gridCells.reduce((s, c) => s + (c.duration || 1), 0); }
+function updateMotifSum() {
+  const motif = Math.max(1, parseInt($("f-motif").value, 10) || 1);
+  const need = 4 * motif;
+  const got = motifTotal();
+  const el = $("motif-sum") || (() => { const e = document.createElement("div"); e.id = "motif-sum"; e.style.cssText = "font-size:12px;margin-top:4px;"; $("grid").parentNode.insertBefore(e, $("grid").nextSibling); return e; })();
+  el.textContent = `时值之和 ${got} / 需要 ${need}（${got === need ? "✓对齐" : "✗未对齐，保存会被拒"}）`;
+  el.style.color = got === need ? "#2e7d32" : "#c62828";
+}
 
 // ── 试听：Web Audio 合成 ─────────────────────────────────────────────
 function ensureCtx() {
@@ -298,21 +319,24 @@ function stopPlay() {
 
 function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
 
-// 吉他近似音色：三角波 + 衰减包络。duration_tick=1（逐格断音），故音长不依赖 durSec，
-// 给一个固定的自然余音（约 0.2 秒指数衰减），既断音清晰又不生硬。
+// 吉他近似音色：三角波 + 包络。音持续 durSec（动作真实时值），末尾指数衰减。
+// durSec 来自动作的 duration_tick（延续=长、断音=短），由用户逐格控制。
 function playNote(ctx, midi, startSec, durSec, vel) {
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.type = "triangle";
   osc.frequency.value = midiToFreq(midi);
   const peak = 0.18 * (vel / 100);
-  const tail = 0.20;  // 自然余音衰减时长（秒），与 BPM 无关
+  const tail = 0.15;  // 末尾自然衰减时长（秒），与动作时值无关
+  const sustainEnd = startSec + Math.max(0.02, durSec);  // 持续到动作时值结束
+  const releaseEnd = sustainEnd + tail;                  // 再衰减尾巴
   gain.gain.setValueAtTime(0, startSec);
   gain.gain.linearRampToValueAtTime(peak, startSec + 0.005);
-  gain.gain.exponentialRampToValueAtTime(0.0008, startSec + tail);
+  gain.gain.setValueAtTime(peak, sustainEnd);            // 持续段保持
+  gain.gain.exponentialRampToValueAtTime(0.0008, releaseEnd);
   osc.connect(gain).connect(ctx.destination);
   osc.start(startSec);
-  osc.stop(startSec + tail + 0.02);
+  osc.stop(releaseEnd + 0.02);
   return osc;
 }
 
@@ -343,7 +367,7 @@ async function play() {
   const t0 = ctx.currentTime + 0.05;
   for (const n of nl.notes) {
     const startSec = t0 + n.start_tick * tickSec;
-    const durSec = Math.max(0.05, n.duration_tick * tickSec * 0.95);
+    const durSec = n.duration_tick * tickSec;  // 动作真实时值，延续/断音由 duration 控制
     const osc = playNote(ctx, n.midi, startSec, durSec, n.velocity);
     playTimers.push({ osc, timer: null });
   }
@@ -355,25 +379,27 @@ async function play() {
 }
 
 function highlightGrid(nl, t0, tickSec) {
-  // 按 tick 折叠到动机周期内：动作 tick 对应平铺栅格位置，对动机长度取模即得动机格下标。
-  // 动机重复铺开时，每拍对应动机里同位置的格，故折叠映射语义正确。
-  const motifLen = gridCells.length || 1;
+  // 每个 nl.grid 动作对应一个发音 cell（按其 tick 在动机周期内累计 duration 定位）。
+  // 高亮该 cell，持续动作的 duration_tick。
   const cells = document.querySelectorAll("#grid .cell");
+  const motifTotal = gridCells.reduce((s, c) => s + (c.duration || 1), 0) || 1;
   nl.grid.forEach((g) => {
-    const motifIdx = (g.tick / 4 | 0) * 4 % motifLen;  // tick→拍→拍内起点，折叠到动机
-    // 进一步定位到该拍内最近的发声格（向前找第一个非 rest）
-    let idx = motifIdx;
-    for (let off = 0; off < 4; off++) {
-      const cand = motifIdx + off;
-      if (cand < motifLen && gridCells[cand].type !== "rest") { idx = cand; break; }
+    // 把 g.tick 折叠到动机周期内，找落在哪个编辑器 cell。
+    const localTick = g.tick % motifTotal;
+    let idx = 0, acc = 0;
+    for (let i = 0; i < gridCells.length; i++) {
+      if (acc === localTick) { idx = i; break; }
+      acc += (gridCells[i].duration || 1);
+      if (acc > localTick) { idx = i; break; }
     }
-    const startSec = (t0 + g.tick * tickSec - audioCtx.currentTime) * 1000;
-    const t = setTimeout(() => {
+    const startMs = (t0 + g.tick * tickSec - audioCtx.currentTime) * 1000;
+    const durMs = (g.duration_tick || 1) * tickSec * 1000;
+    const tOn = setTimeout(() => {
       cells.forEach(c => c.classList.remove("playing"));
       const el = document.querySelector(`#grid .cell[data-idx="${idx}"]`);
       if (el) el.classList.add("playing");
-    }, Math.max(0, startSec));
-    playTimers.push({ osc: null, timer: t });
+    }, Math.max(0, startMs));
+    playTimers.push({ osc: null, timer: tOn });
   });
 }
 
@@ -385,17 +411,29 @@ $("stop-btn").onclick = stopPlay;
 $("new-btn").onclick = newTemplate;
 $("search").oninput = renderTable;
 
-// 动机拍数改变时，自动对齐 grid 长度到 4*motif（补 rest 或裁断），避免发到后端被
-// __post_init__ 拒（grid_motif 长度必须 == 4 * motif_beats）。同时保证 min_beats >= motif。
+// 动机拍数改变时，自动对齐 grid 时值之和到 4*motif（补 duration=1 rest 或削减末格 duration），
+// 避免发到后端被 __post_init__ 拒（sum(duration) 必须 == 4 * motif_beats）。同时保证 min_beats >= motif。
 $("f-motif").onchange = () => {
   const motif = Math.max(1, parseInt($("f-motif").value, 10) || 1);
   $("f-motif").value = motif;
-  const need = 4 * motif;
-  while (gridCells.length < need) gridCells.push({ type: "rest" });
-  if (gridCells.length > need) gridCells.length = need;
+  alignGridToMotif(motif);
   const minV = parseInt($("f-min").value, 10) || motif;
   $("f-min").value = Math.max(minV, motif);
   paintGrid();
+  updateMotifSum();
 };
+
+// 把 grid 时值之和调整到 4*motif：不足补 duration=1 rest，超了从末格削减 duration、削光则删格。
+function alignGridToMotif(motif) {
+  const need = 4 * motif;
+  let total = motifTotal();
+  while (total < need) { gridCells.push({ type: "rest", duration: 1 }); total += 1; }
+  while (total > need) {
+    const last = gridCells[gridCells.length - 1];
+    if (!last) break;
+    if (last.duration > 1) { last.duration -= 1; total -= 1; }
+    else { gridCells.pop(); total -= 1; }
+  }
+}
 
 loadList().catch(e => setStatus("加载失败: " + e.message));
