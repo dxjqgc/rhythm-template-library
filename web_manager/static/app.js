@@ -327,7 +327,11 @@ async function play() {
   };
   let nl;
   try { nl = await api("POST", "/api/preview", body); }
-  catch (e) { return alert("预览失败: " + e.message); }
+  catch (e) {
+    $("notelist-info").textContent = "预览失败: " + e.message;
+    setStatus("预览失败");
+    return alert("预览失败: " + e.message);
+  }
 
   $("notelist-info").textContent = `${nl.notes.length} 个音符 / ${nl.total_tick} tick / BPM ${nl.bpm}`;
   if (!nl.notes.length) { setStatus("无音符（voicing 解析失败？）"); return; }
@@ -378,5 +382,18 @@ $("play-btn").onclick = play;
 $("stop-btn").onclick = stopPlay;
 $("new-btn").onclick = newTemplate;
 $("search").oninput = renderTable;
+
+// 动机拍数改变时，自动对齐 grid 长度到 4*motif（补 rest 或裁断），避免发到后端被
+// __post_init__ 拒（grid_motif 长度必须 == 4 * motif_beats）。同时保证 min_beats >= motif。
+$("f-motif").onchange = () => {
+  const motif = Math.max(1, parseInt($("f-motif").value, 10) || 1);
+  $("f-motif").value = motif;
+  const need = 4 * motif;
+  while (gridCells.length < need) gridCells.push({ type: "rest" });
+  if (gridCells.length > need) gridCells.length = need;
+  const minV = parseInt($("f-min").value, 10) || motif;
+  $("f-min").value = Math.max(minV, motif);
+  paintGrid();
+};
 
 loadList().catch(e => setStatus("加载失败: " + e.message));

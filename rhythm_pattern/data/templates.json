@@ -719,5 +719,33 @@
     "positions": [
       "tail"
     ]
+  },
+  {
+    "id": "my-pattern-test-1",
+    "name": "my-pattern-test-1",
+    "grid_motif": [
+      {
+        "type": "stroke",
+        "direction": "D"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      },
+      {
+        "type": "rest"
+      }
+    ],
+    "motif_beats": 1,
+    "min_beats": 1,
+    "ideal_beats": [],
+    "sections": [
+      "chorus"
+    ],
+    "style": "pop",
+    "technique": "strum",
+    "positions": []
   }
 ]
