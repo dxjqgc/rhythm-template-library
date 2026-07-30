@@ -298,19 +298,21 @@ function stopPlay() {
 
 function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
 
-// 吉他近似音色：三角波 + 快速衰减包络。
+// 吉他近似音色：三角波 + 衰减包络。duration_tick=1（逐格断音），故音长不依赖 durSec，
+// 给一个固定的自然余音（约 0.2 秒指数衰减），既断音清晰又不生硬。
 function playNote(ctx, midi, startSec, durSec, vel) {
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
   osc.type = "triangle";
   osc.frequency.value = midiToFreq(midi);
-  const peak = 0.0 + 0.18 * (vel / 100);
+  const peak = 0.18 * (vel / 100);
+  const tail = 0.20;  // 自然余音衰减时长（秒），与 BPM 无关
   gain.gain.setValueAtTime(0, startSec);
   gain.gain.linearRampToValueAtTime(peak, startSec + 0.005);
-  gain.gain.exponentialRampToValueAtTime(0.0008, startSec + Math.max(0.05, durSec * 0.9));
+  gain.gain.exponentialRampToValueAtTime(0.0008, startSec + tail);
   osc.connect(gain).connect(ctx.destination);
   osc.start(startSec);
-  osc.stop(startSec + durSec + 0.05);
+  osc.stop(startSec + tail + 0.02);
   return osc;
 }
 

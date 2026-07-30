@@ -23,7 +23,7 @@ from rhythm_pattern import (
     resolve_voicing,
     set_pattern_source,
 )
-from rhythm_pattern.model import RhythmEvent
+from rhythm_pattern.model import Pluck, RhythmEvent, Stroke
 
 if TYPE_CHECKING:
     from pytheory import Fretboard
@@ -70,17 +70,24 @@ def pattern_to_notelist(
     流程：
     1. ``resolve_voicing`` 取该和弦首选指法的 voicing（弦号→midi 映射）。
     2. ``instantiate_pattern`` 把模板平铺到 ``beats`` 拍、实例化 Pluck 弦号。
-    3. 走 ``event.fingering``（已有正确时值模型：发音 duration=到下个发音距离，
-       rest=发音前真静默），按 16 分 tick 游标展开成音符。
+    3. **逐格**遍历 ``event.grid.cells``：发音格发出该格的音（``duration_tick=1``），
+       ``None`` 格（休止）不发音并切断前音。
+
+    时值语义：栅格层的 ``None`` 格统一表示「不发声」（休止符），无论它在发音格
+    之前还是之后——这与核心 :func:`fingering_sequence` 的「发音后 None = 延续」
+    不同：那套是给**转谱**的吉他物理延续建模，本函数是给**试听合成**用，按休止符
+    直觉「休止=不发声」处理，使每个发音只响自己那格 16 分，便于逐格控制断音
+    （如 ``X . X .`` 第一 X 不延续、第二 X 也不延续；``X X`` 连续两格各响一下）。
+    前端音频包络给每个音一段自然衰减余音，既断音清晰又不生硬。
 
     扫弦动作（stroke_down/up）发出 voicing 全部发音弦的音；拨弦动作（pluck）发出
-    ``strings`` 对应弦的 midi（解析失败 strings=None 则跳过该拨弦）；rest 不发音。
+    ``strings`` 对应弦的 midi（解析失败 strings=None 则跳过该拨弦）。
 
     返回::
 
         {
           "bpm": 90, "ticks_per_beat": 4,
-          "notes": [{"midi":48,"start_tick":0,"duration_tick":4,"velocity":80}, ...],
+          "notes": [{"midi":48,"start_tick":0,"duration_tick":1,"velocity":80}, ...],
           "total_tick": 16,                       # = 4 * beats
           "grid":  [{"tick":0,"kind":"stroke_down"}, {"tick":4,"kind":"pluck","strings":[3,2]}, ...]
         }
@@ -104,37 +111,31 @@ def pattern_to_notelist(
     # 扫弦发出全部发音弦的音；预计算一次。
     all_voicing_midis = [m for _s, m in voicing.midi]  # type: ignore[attr-defined]
 
-    cursor = 0  # 16 分 tick 游标
-    for action in event.fingering:
-        dur = action.duration
-        if action.kind == "rest":
-            cursor += dur
+    # 逐格遍历：发音格发出 1 格时值的音，None 格静默（切断前音）。
+    cursor = 0
+    for cell in event.grid.cells:
+        if cell is None:
+            cursor += 1
             continue
-        if action.kind in ("stroke_down", "stroke_up"):
+        if isinstance(cell, Stroke):
             midis = all_voicing_midis
-            kind = "stroke_down" if action.kind == "stroke_down" else "stroke_up"
+            kind = "stroke_down" if cell.direction == "D" else "stroke_up"
             grid.append({"tick": cursor, "kind": kind})
-        elif action.kind == "pluck":
-            strings = action.strings or ()
-            # notes 与 grid 保持一致：只记录能映射到 midi 的弦（拨到闷音弦时 grid 与 notes 同步省略）。
+        else:  # Pluck
+            strings = cell.strings or ()
             kept = [s for s in strings if s in string_to_midi]
             midis = [string_to_midi[s] for s in kept]
-            grid.append(
-                {"tick": cursor, "kind": "pluck", "strings": list(kept)}
-            )
-        else:
-            cursor += dur
-            continue
+            grid.append({"tick": cursor, "kind": "pluck", "strings": list(kept)})
         for m in midis:
             notes.append(
                 {
                     "midi": m,
                     "start_tick": cursor,
-                    "duration_tick": dur,
+                    "duration_tick": 1,
                     "velocity": 80,
                 }
             )
-        cursor += dur
+        cursor += 1
 
     return {
         "bpm": bpm,
