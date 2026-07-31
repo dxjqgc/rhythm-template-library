@@ -18,8 +18,10 @@ from pytheory import Fretboard
 BENCHMARK: list[tuple[list[tuple[str, int]], str, str, list[str]]] = [
     # 4 拍副歌流行 -> 经典 4/4 流行扫弦。
     ([("C", 4)], "chorus", "pop", ["pop D-DU-U-DU"]),
-    # 每和弦 1 拍的流行副歌 -> 8 分上下扫。
-    ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "pop", ["pop 8th-notes"]),
+    # 每和弦 1 拍的流行副歌 -> 16 分「下下下上」撑满短和弦时间。
+    # 注：1 拍和弦时间短，8 分（pop 8th-notes）每拍仅 2 音偏疏，16 分 D-D-DU（密度 1.0）
+    # 更贴副歌饱满度；pop 8th-notes 退守 2 拍副歌甜区（见 _show 演示）。
+    ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "pop", ["D-D-DU (1拍16分)"]),
     # 每和弦 1 拍的摇滚副歌 -> 全下扫重拍。
     ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "rock", ["rock 8th down"]),
     # 主歌民谣 4-2-2：4 拍 C 用 53231323 分解（民谣经典动作），2 拍 G/Am 用 folk D-DU 扫弦。
@@ -254,7 +256,7 @@ def check_selection_context(gtr) -> None:
     # 直接在 pattern_cost 层验证罚分值，不依赖整体选型能否翻盘（BPM 是软罚分，在 chorus
     # 高目标密度段落下，高密度模板即便加罚也仍可能胜出--这是设计预期，不该靠翻盘来验证）。
     # 53231323 (16分) 密度 1.0，180 BPM 下应吃 (1.0-0.5)*W_BPM_HIGH = 1.5 罚分；
-    # pop 8th-notes 密度 1.0 同理。低密度模板（boom-chick 0.25）不受 BPM 影响。
+    # 低密度模板（boom-chick 0.25）不受 BPM 影响。
     from rhythm_pattern import pattern_cost
     dense = next(p for p in STRUM_PATTERNS if p.name == "53231323 (16分)")
     sparse = next(p for p in STRUM_PATTERNS if p.name == "boom-chick")

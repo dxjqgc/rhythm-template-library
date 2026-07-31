@@ -181,8 +181,9 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="pop 8th-notes",
-        # 1 拍动机：下-上 16 分音符交替 ×4，流行副歌最常见（密集下上交替）。
-        grid_motif=(Stroke("D", 1), Stroke("U", 1), Stroke("D", 1), Stroke("U", 1)),
+        # 1 拍动机：下-上 8 分音符交替（下8分 + 上8分），流行副歌最常见。
+        # 8 分 = 每拍 2 个音，每音 duration=2（2 个 16 分位置 = 8 分）。名副其实。
+        grid_motif=(Stroke("D", 2), Stroke("U", 2)),
         motif_beats=1,
         min_beats=1,
         ideal_beats=(1, 2, 4),
