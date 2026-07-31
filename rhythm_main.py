@@ -5,8 +5,9 @@
 （``pattern_cost`` 的 ``W_*`` 常量）后必须跑一遍。
 """
 
-from rhythm_pattern import STRUM_PATTERNS, enumerate_rhythm_patterns
+from rhythm_pattern import STRUM_PATTERNS, arrange_progression, enumerate_rhythm_patterns
 from rhythm_pattern.model import Rest
+from rhythm_pattern.strum_patterns import SelectionContext
 from pytheory import Fretboard
 
 
@@ -216,8 +217,10 @@ def check_selection_context(gtr) -> None:
 
     验证三件事：
 
-    1. **拍号契合**：``ctx.time_signature=(3,4)`` 下，``motif_beats=4`` 的 4 拍周期
-       模板（pop D-DU-U-DU）吃 ``W_TIME_SIG`` 罚分，应让位能整周期对齐的短动机模板。
+    1. **拍号契合**：``ctx.time_signature=(6,8)`` 下，4/4 模板吃 ``W_TIME_SIG_MISMATCH``
+       重罚（量级 50），让位 6/8 专属模板（``time_signature==(6,8)`` 不罚）。6/8 是拍号
+       维度真正起作用的场景（有专属模板可替代）；3/4 等无专属模板的拍号下重罚无差别，
+       4/4 模板仍可能被选。
     2. **BPM 可演奏性**：``ctx.bpm=180``（高 BPM）下，``53231323 (16分)`` 这类密度 1.0
        的过密分解模板吃 ``W_BPM_HIGH`` 罚分，让位低密度模板。
     3. **缺省降级**：``SelectionContext()`` 全空字段时，输出与旧式调用
@@ -226,23 +229,25 @@ def check_selection_context(gtr) -> None:
     print("\n=== SelectionContext 抽象层 ===")
     from rhythm_pattern import SelectionContext
 
-    # ── 1. 拍号契合：3/4 拍号下 4 拍周期模板被罚分让位 ──
-    # 占 4 拍的和弦：4/4（缺省）下 pop D-DU-U-DU（motif_beats=4）靠整动机奖励 + ideal_beats
-    # 命中胜出。显式给 (3,4) 拍号后，该模板吃 W_TIME_SIG 罚分（4 拍动机在 3/4 拍号下不周期
-    # 对齐），应被压下让位其他模板。注意：min_beats=4 不会被拍号筛掉（仍占 4 拍），靠罚分降级。
-    prog = [("C", 4)]
+    # ── 1. 拍号契合：6/8 拍号下 4/4 模板被重罚让位 6/8 专属模板 ──
+    # 占 2 拍（6/8 一小节）的和弦：4/4（缺省）下无 6/8 概念，选 4/4 模板（如 pop 8th-notes
+    # 或 D-D-DU）。显式给 (6,8) 拍号后，4/4 模板吃 W_TIME_SIG_MISMATCH 重罚（量级 50，远大于
+    # 其他维度总和），让位 6/8 专属模板（time_signature==(6,8) 不罚）。这样 6/8 歌曲选
+    # 出地道附点律动模板，拒 4/4 均匀律动。3/4 等无专属模板的拍号下重罚无差别（无替代），
+    # 4/4 模板仍可能被选——这是诚实表现，6/8 才是拍号维度真正起作用的场景。
+    prog = [("C", 2)]
     e_44 = enumerate_rhythm_patterns(prog, gtr, section="chorus", style="pop")[0]
-    e_34 = enumerate_rhythm_patterns(
-        prog, gtr, ctx=SelectionContext(section="chorus", style="pop", time_signature=(3, 4))
+    e_68 = enumerate_rhythm_patterns(
+        prog, gtr, ctx=SelectionContext(section="chorus", style="pop", time_signature=(6, 8))
     )[0]
-    print(f"  4拍和弦 4/4(缺省) -> {e_44.pattern.name}")
-    print(f"  4拍和弦 (3,4)拍号 -> {e_34.pattern.name}")
-    assert e_44.pattern.name == "pop D-DU-U-DU", (
-        "4/4 缺省下 4 拍和弦应选 pop D-DU-U-DU（整动机奖励），实际 "
-        f"{e_44.pattern.name}"
+    print(f"  2拍和弦 4/4(缺省) -> {e_44.pattern.name} (ts={e_44.pattern.time_signature})")
+    print(f"  2拍和弦 (6,8)拍号 -> {e_68.pattern.name} (ts={e_68.pattern.time_signature})")
+    assert e_44.pattern.time_signature == (4, 4), (
+        "4/4 缺省下应选 4/4 模板，实际 " + str(e_44.pattern.time_signature)
     )
-    assert e_34.pattern.name != "pop D-DU-U-DU", (
-        "3/4 拍号下 4 拍周期模板 pop D-DU-U-DU 应被拍号罚分压下，实际仍被选中"
+    assert e_68.pattern.time_signature == (6, 8), (
+        "6/8 拍号下应选 6/8 专属模板（4/4 模板被重罚），实际选了 "
+        f"{e_68.pattern.name} (ts={e_68.pattern.time_signature})"
     )
 
     # ── 2. BPM 可演奏性：高 BPM 下过密模板吃罚分 ──
@@ -374,6 +379,56 @@ def check_arrange_progression(gtr) -> None:
     print("  断言通过: 位置自动生效；DP 连贯性不劣于贪心；指法序列正确")
 
 
+def check_68(gtr) -> None:
+    """6/8 拍号：模板拍号契合筛 6/8 专属，栅格按附点拍对齐，重音体现强弱分组。
+
+    验证四件事：
+
+    1. **拍号契合**：``ctx.time_signature=(6,8)`` 下选出的模板 ``time_signature==(6,8)``，
+       4/4 模板吃 ``W_TIME_SIG_MISMATCH`` 重罚不入选。
+    2. **栅格对齐**：6/8 一拍 = 3 tick，栅格总时值 = ``3 * beats``，``n_beats == beats``。
+    3. **重音存在**：6/8 专属模板至少含一个 ``strong`` accent（强拍标记）。
+    4. **整段编排**：6/8 歌曲的编排也只在 6/8 模板里选，不混入 4/4。
+    """
+    print("\n=== 6/8 拍号 ===")
+    # 1+2. 拍号契合 + 栅格对齐：6/8 副歌 2 拍（1 小节）选 6/8 模板，总时值 = 3*beats。
+    for prog, section, style in [
+        ([("C", 2)], "chorus", "pop"),
+        ([("C", 2), ("G", 2)], "verse", "folk"),
+    ]:
+        ctx = SelectionContext(section=section, style=style, time_signature=(6, 8))
+        events = enumerate_rhythm_patterns(prog, gtr, ctx=ctx)
+        for e in events:
+            assert e.pattern.time_signature == (6, 8), (
+                f"6/8 歌曲应选 6/8 模板，实际选了 {e.pattern.name} (ts={e.pattern.time_signature})"
+            )
+            total = sum(c.duration for c in e.grid.cells)
+            assert total == 3 * e.beats, (
+                f"6/8 栅格总时值应=3*beats={3 * e.beats}，实际 {total}（{e.pattern.name}）"
+            )
+            assert e.grid.ticks_per_beat == 3, f"6/8 栅格 ticks_per_beat 应=3，实际 {e.grid.ticks_per_beat}"
+            assert e.grid.n_beats == e.beats, f"n_beats 应={e.beats}，实际 {e.grid.n_beats}"
+        print(f"  {section}/{style} {prog} -> {[e.pattern.name for e in events]} (全 6/8, 总时值 3*beats)")
+
+    # 3. 重音存在：6/8 模板至少含一个 strong accent。
+    p68 = [p for p in STRUM_PATTERNS if p.time_signature == (6, 8)]
+    assert p68, "硬编码库应有 6/8 专属模板"
+    for p in p68:
+        has_strong = any(getattr(c, "accent", None) == "strong" for c in p.grid_motif)
+        assert has_strong, f"6/8 模板 {p.name} 应至少含一个 strong accent"
+    print(f"  {len(p68)} 个 6/8 模板均含 strong accent: {[p.name for p in p68]}")
+
+    # 4. 整段编排也只在 6/8 模板里选。
+    ctx = SelectionContext(section="verse", style="folk", time_signature=(6, 8))
+    arranged = arrange_progression([("C", 2), ("G", 2), ("Am", 2), ("F", 2)], gtr, ctx=ctx)
+    assert all(e.pattern.time_signature == (6, 8) for e in arranged), (
+        "6/8 编排不应混入 4/4 模板，实际 "
+        + str([e.pattern.time_signature for e in arranged])
+    )
+    print(f"  编排 4 和弦 -> {[e.pattern.name for e in arranged]} (全 6/8)")
+    print("  断言通过: 6/8 拍号筛专属模板，栅格按附点拍对齐，重音标注强弱")
+
+
 def main() -> None:
     gtr = Fretboard.guitar()
 
@@ -385,6 +440,7 @@ def main() -> None:
     check_string_roles(gtr)
     check_selection_context(gtr)
     check_arrange_progression(gtr)
+    check_68(gtr)
 
     # 展示几段典型进行选出的节奏栅格（不参与断言）。
     _show([("C", 4), ("G", 4), ("Am", 4), ("F", 4)], "chorus", "pop", gtr)

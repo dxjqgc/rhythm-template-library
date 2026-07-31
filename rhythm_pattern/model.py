@@ -1,8 +1,10 @@
 """扫弦节奏型的数据模型。
 
-所有节奏型落在 **16 分音符时值**上：一拍 = 4 个 16 分位置，占 N 拍的和弦对应总时值 4N。
-栅格里每个动作（扫弦/拨弦/休止）自带 ``duration``（占多少个 16 分位置），直接表达
-该动作的时值，不再用空格位置推断。
+所有节奏型落在 **16 分音符时值**上，但「一拍 = 多少个 16 分位置」由拍号分母决定：
+``/4`` 拍号（4/4、3/4）一拍 = 4 个 16 分位置，``/8`` 拍号（6/8、3/8）一拍 = 附点 8 分 =
+3 个 16 分位置。占 N 拍的和弦对应总时值 ``ticks_per_beat * N``。栅格里每个动作（扫弦/
+拨弦/休止）自带 ``duration``（占多少个 16 分位置），直接表达该动作的时值，不再用空格
+位置推断。
 
 栅格里每格取值是三种「右手动作/休止」之一：
 
@@ -16,10 +18,14 @@
 每个动作的 ``duration`` 显式记录它占多少个 16 分位置：发音动作的 duration = 音持续响多久，
 休止的 duration = 静默多久。延续与断音都由动作自身的 duration 控制，符合乐理。
 
+发音动作（``Stroke``/``Pluck``）还自带 ``accent``（``strong``/``weak``/``default``），
+标记该动作落在强拍/弱拍/中性，用于表达 6/8 等**复拍子**的拍内强弱分组（6/8 一小节 =
+[强 弱 弱][强 弱 弱]），并在试听时映射成 velocity。休止无强弱概念，不加 accent。
+
 一个节奏型模板以「完整动机」（``grid_motif``，跨 ``motif_beats`` 拍）存储，选型时按
-和弦拍数平铺/截断成完整栅格。动机可跨 1/2/4 拍--1 拍动机（总时值 4）对扫弦小单元够用，
-2 拍动机（总时值 8）表达 53231323 这类 8 音分解，4 拍动机（总时值 16）表达 pop D-DU-U-DU
-完整周期。占拍数不够 ``min_beats`` 的模板由拍数门槛一票否决。
+和弦拍数平铺/截断成完整栅格。动机可跨 1/2/4 拍--1 拍动机对扫弦小单元够用，
+2 拍动机表达 53231323 这类 8 音分解，4 拍动机表达 pop D-DU-U-DU 完整周期。占拍数不够
+``min_beats`` 的模板由拍数门槛一票否决。
 """
 
 from __future__ import annotations
@@ -43,6 +49,15 @@ Position = Literal["head", "middle", "tail"]
 0 罚分、其他位置罚 ``W_POSITION``。这样不强迫所有模板都标位置，与 ``sections`` 同构。
 """
 
+Accent = Literal["strong", "weak", "default"]
+"""发音动作的强弱标记。
+
+表达该动作落在强拍/弱拍/中性，用于复拍子（如 6/8）的拍内强弱分组，并在试听时映射成
+velocity（``strong``→重、``weak``→轻、``default``→中）。休止无强弱概念，不标 accent。
+
+默认 ``"default"`` 向后兼容：现有 4/4 模板不传 accent 时全为中性，行为不变。
+"""
+
 
 @dataclass(frozen=True)
 class Stroke:
@@ -55,10 +70,14 @@ class Stroke:
         首期不含切音、闷音、击勾等高级技法--只此两种。
     duration
         该动作占多少个 **16 分音符位置**（1=16分、2=8分、4=四分...）。发音持续这么久。
+    accent
+        强弱标记（:data:`Accent`）。复拍子（6/8 等）下用 ``strong``/``weak`` 表达拍内
+        强弱分组，试听时映射成 velocity。默认 ``"default"``。
     """
 
     direction: Literal["D", "U"]
     duration: int = 1
+    accent: Accent = "default"
 
     def __str__(self) -> str:
         return self.direction
@@ -87,11 +106,14 @@ class Pluck:
         运行时若 ``role`` 解析失败（voicing 无该音级等），保持 ``None`` 表示「拨但弦未定」。
     duration
         该动作占多少个 **16 分音符位置**。
+    accent
+        强弱标记（:data:`Accent`）。同 :class:`Stroke.accent`。
     """
 
     role: "StringRole | None" = None
     strings: tuple[int, ...] | None = None
     duration: int = 1
+    accent: Accent = "default"
 
     def __str__(self) -> str:
         return "P"
@@ -122,32 +144,43 @@ class RhythmGrid:
     """一段节奏型在 16 分栅格上的表达。
 
     每格代表一个动作（扫弦/拨弦/休止），自带 ``duration``（占多少个 16 分位置）。
-    栅格所有动作 ``duration`` 之和必为 4 的整数倍（整数拍）。
+    栅格所有动作 ``duration`` 之和必为 ``ticks_per_beat`` 的整数倍（整数拍）。
+
+    ``ticks_per_beat`` 由所属模板的拍号分母决定（``/4``→4、``/8``→3，见
+    :attr:`StrumPattern.ticks_per_beat`），平铺/截断产出的栅格需带上它以维持不变量。
+    默认 4（4/4）保证脱离模板单独构造栅格时（测试、实例化重建）向后兼容。
 
     Attributes
     ----------
     cells
         按时间顺序的动作序列。下标 0 = 第一拍第一个 16 分位置。
+    ticks_per_beat
+        一拍 = 多少个 16 分位置。``/4`` 拍号→4，``/8`` 拍号→3（附点 8 分拍）。
+        栅格总时值必为它的整数倍。
     """
 
     cells: tuple[Cell, ...]
+    ticks_per_beat: int = 4
 
     def __post_init__(self) -> None:
         if not self.cells:
             raise ValueError("栅格不能为空")
+        if self.ticks_per_beat < 1:
+            raise ValueError(f"ticks_per_beat 必须 >=1，实际 {self.ticks_per_beat}")
         for c in self.cells:
             if c.duration < 1:
                 raise ValueError(f"每个动作的 duration 必须 >=1，实际 {c.duration}")
         total = sum(c.duration for c in self.cells)
-        if total % 4 != 0:
+        if total % self.ticks_per_beat != 0:
             raise ValueError(
-                f"栅格总时值 {total} 不是 4 的整数倍（每拍 4 个 16 分位置）"
+                f"栅格总时值 {total} 不是 {self.ticks_per_beat} 的整数倍"
+                f"（每拍 {self.ticks_per_beat} 个 16 分位置）"
             )
 
     @property
     def n_beats(self) -> int:
-        """栅格跨多少拍（= 总时值 / 4）。"""
-        return sum(c.duration for c in self.cells) // 4
+        """栅格跨多少拍（= 总时值 / ticks_per_beat）。"""
+        return sum(c.duration for c in self.cells) // self.ticks_per_beat
 
     @property
     def n_strokes(self) -> int:
@@ -203,6 +236,11 @@ class StrumPattern:
     technique
         该模板的右手技法，``"strum"``（扫弦）/ ``"arpeggio"``（分解）。
         由 ``is_strum`` / ``is_arpeggio`` 派生。musicnn 的段落技法基线据此罚分。
+    time_signature
+        该模板的拍号 ``(分子, 分母)``，如 ``(4,4)`` / ``(3,4)`` / ``(6,8)``。分母决定
+        :attr:`ticks_per_beat`（``/4``→4、``/8``→3）。默认 ``(4,4)`` 向后兼容现有 4/4
+        模板。选型时模板拍号与请求拍号不一致会被重罚（实际不入候选），故 6/8 模板只用于
+        6/8 歌曲、4/4 模板只用于 4/4 歌曲，禁止跨拍号借用（避免劈跨拍动作破坏附点律动）。
     """
 
     name: str
@@ -217,13 +255,19 @@ class StrumPattern:
     """适用位置标签，:data:`Position` 的子集。空（默认）= 位置中立，所有位置都不罚分；
     非空时仅在这些位置 0 罚分、其他位置罚 ``W_POSITION``。只有需要特殊位置处理的模板
     （如琶音收尾）才填，如 ``("tail",)``。head 一般不做特殊处理，故无模板标 ``("head",)``。"""
+    time_signature: tuple[int, int] = (4, 4)
 
     def __post_init__(self) -> None:
-        expected = 4 * self.motif_beats
+        if self.time_signature[1] not in (4, 8):
+            raise ValueError(
+                f"不支持的拍号分母 {self.time_signature[1]}（仅 /4 与 /8 支持）"
+            )
+        expected = self.ticks_per_beat * self.motif_beats
         total = sum(c.duration for c in self.grid_motif)
         if total != expected:
             raise ValueError(
-                f"grid_motif 总时值应为 4 * motif_beats = {expected}，实际 {total}"
+                f"grid_motif 总时值应为 ticks_per_beat * motif_beats = {expected}"
+                f"（拍号 {self.time_signature}），实际 {total}"
             )
         if self.motif_beats < 1:
             raise ValueError("motif_beats 至少为 1")
@@ -244,6 +288,15 @@ class StrumPattern:
             )
 
     @property
+    def ticks_per_beat(self) -> int:
+        """一拍 = 多少个 16 分位置。``/4`` 拍号→4，``/8`` 拍号→3（附点 8 分拍）。
+
+        ``/8`` 拍号下「一拍」= 附点 8 分 = 3 个 16 分位置；``beats`` 按附点拍计
+        （6/8 一小节 = 2 拍）。仅支持 ``/4`` 与 ``/8`` 两类分母。
+        """
+        return 4 if self.time_signature[1] == 4 else 3
+
+    @property
     def is_strum(self) -> bool:
         """是否扫弦模板。"""
         return self.technique == "strum"
@@ -254,22 +307,26 @@ class StrumPattern:
         return self.technique == "arpeggio"
 
     def grid_for(self, beats: int) -> RhythmGrid:
-        """把动机平铺/截断成 ``beats`` 拍的完整栅格（总时值 ``4 * beats``）。
+        """把动机平铺/截断成 ``beats`` 拍的完整栅格（总时值 ``ticks_per_beat * beats``）。
 
         ``beats < min_beats`` 时调用方应已通过拍数门槛剔除；此处不重复检查。
         平铺规则（基于 ``duration`` 之和，不再按格数切片）：
 
-        - ``4*beats <= 动机总时值`` -> 取动机前缀截断到 ``4*beats``（截断边界动作的 duration）；
+        - ``need <= 动机总时值`` -> 取动机前缀截断到 ``need``（截断边界动作的 duration）；
         - 否则整数份平铺 + 末尾不足一动机的前缀截断（同样截断边界动作 duration）。
         保证任意正整数拍都有确定输出，整数倍时退化为干净平铺。
+
+        同拍号下 ``need`` 与动机总时值都是 ``ticks_per_beat`` 倍数，按 tick 整除即等价
+        按拍整除。跨拍号借用由选型层拍号契合罚分阻止，本函数只处理同拍号平铺。
         """
         if beats < 1:
             raise ValueError(f"拍数必须为正整数，实际 {beats}")
-        need = 4 * beats
+        tpb = self.ticks_per_beat
+        need = tpb * beats
         motif = self.grid_motif
-        motif_total = sum(c.duration for c in motif)  # == 4 * motif_beats
+        motif_total = sum(c.duration for c in motif)  # == tpb * motif_beats
         if need <= motif_total:
-            return RhythmGrid(_truncate_to_duration(motif, need))
+            return RhythmGrid(_truncate_to_duration(motif, need), ticks_per_beat=tpb)
         out: list[Cell] = []
         full_copies = need // motif_total
         remainder = need % motif_total
@@ -277,19 +334,29 @@ class StrumPattern:
             out.extend(motif)
         if remainder > 0:
             out.extend(_truncate_to_duration(motif, remainder))
-        return RhythmGrid(tuple(out))
+        return RhythmGrid(tuple(out), ticks_per_beat=tpb)
 
     def density(self) -> float:
-        """基本动机的密度（平铺后密度不变，直接取动机算）。"""
-        return RhythmGrid(self.grid_motif).density
+        """基本动机的密度（平铺后密度不变，直接取动机算）。
+
+        直接按 ``n_strokes / sum(duration)`` 算，不构造 :class:`RhythmGrid`——避免
+        6/8 等 ``/8`` 拍号模板的总时值（3 的倍数）触发 RhythmGrid 默认 ``ticks_per_beat=4``
+        的不变量校验。
+        """
+        total = sum(c.duration for c in self.grid_motif)
+        n = sum(1 for c in self.grid_motif if not isinstance(c, Rest))
+        return n / total if total else 0.0
 
 
 def _with_duration(cell: Cell, duration: int) -> Cell:
-    """返回与 ``cell`` 同类型、同其余字段、``duration`` 改为给定值的副本。"""
+    """返回与 ``cell`` 同类型、同其余字段、``duration`` 改为给定值的副本。
+
+    保留 ``accent``（发音动作）——截断重建时丢 accent 会破坏 6/8 等复拍子的强弱分组。
+    """
     if isinstance(cell, Stroke):
-        return Stroke(cell.direction, duration)
+        return Stroke(cell.direction, duration, cell.accent)
     if isinstance(cell, Pluck):
-        return Pluck(role=cell.role, strings=cell.strings, duration=duration)
+        return Pluck(role=cell.role, strings=cell.strings, duration=duration, accent=cell.accent)
     return Rest(duration)  # isinstance(cell, Rest)
 
 
@@ -314,7 +381,8 @@ def _truncate_to_duration(cells: tuple[Cell, ...], target: int) -> tuple[Cell, .
         if acc == target:
             break
     if acc != target:
-        # 防御：动机总时值恒为 4 的倍数，target < 动机总时值时前缀总能填满，此处不该到。
+        # 防御：动机总时值恒为 ticks_per_beat 的倍数，target < 动机总时值时前缀总能填满，
+        # 此处不该到。
         raise ValueError(f"动机前缀无法填满 {target}（实际填到 {acc}）")
     return tuple(out)
 
@@ -386,7 +454,8 @@ class FingeringAction:
     - **rest** 的 ``duration`` = 该休止的静默时值。
 
     延续（音持续）与休止（真静默）都是动作自身的时值属性，符合乐理；不再由 ``None`` 格
-    位置推断。序列所有动作 ``duration`` 之和 = 栅格总时值（``4 × beats``），时间轴完整对齐。
+    位置推断。序列所有动作 ``duration`` 之和 = 栅格总时值（``ticks_per_beat × beats``），
+    时间轴完整对齐。
 
     Attributes
     ----------
@@ -405,27 +474,33 @@ class FingeringAction:
     duration
         该动作占多少个 **16 分音符位置**（1=16分、2=8分、4=四分、8=二分...）。
         发音动作的 duration 含其后的延续格；rest 的 duration 为静默时长。序列所有动作
-        duration 之和 = 栅格总格数（``4 × beats``），时间轴完整对齐。
+        duration 之和 = 栅格总格数（``ticks_per_beat × beats``），时间轴完整对齐。
+    accent
+        强弱标记（:data:`Accent`），从发音动作透传。rest 的 accent 为 ``"default"``。
+        转谱项目可据此渲染力度记号；试听时映射成 velocity。
 
     Notes
     -----
-    后续可扩展力度、闷音/切音等修饰--加字段即可，``kind`` 已区分动作大类。
+    后续可扩展闷音/切音等修饰--加字段即可，``kind`` 已区分动作大类。
     """
 
     kind: Literal["stroke_down", "stroke_up", "pluck", "rest"]
     strings: tuple[int, ...] | None
     duration: int = 1
+    accent: Accent = "default"
 
     def to_dict(self) -> dict:
-        """转 JSON 友好的 dict（``kind`` + ``strings`` + ``duration``）。
+        """转 JSON 友好的 dict（``kind`` + ``strings`` + ``duration`` + ``accent``）。
 
         供转谱项目跨语言消费：``json.dumps(action.to_dict())`` 即得
-        ``{"kind": ..., "strings": ..., "duration": ...}``。``strings`` 为 ``None`` 时输出 null。
+        ``{"kind": ..., "strings": ..., "duration": ..., "accent": ...}``。
+        ``strings`` 为 ``None`` 时输出 null。
         """
         return {
             "kind": self.kind,
             "strings": list(self.strings) if self.strings is not None else None,
             "duration": self.duration,
+            "accent": self.accent,
         }
 
 
@@ -433,13 +508,14 @@ def fingering_sequence(grid: RhythmGrid) -> tuple[FingeringAction, ...]:
     """把栅格转成带 ``duration`` 的 :class:`FingeringAction` 序列。
 
     栅格层每个动作（Stroke/Pluck/Rest）已自带 ``duration``，故本函数为近恒等映射：
-    逐格映射成对应的 :class:`FingeringAction`，``duration`` 直接取动作自身的值。
+    逐格映射成对应的 :class:`FingeringAction`，``duration`` 直接取动作自身的值；
+    发音动作的 ``accent`` 一并透传。
 
-    - :class:`Stroke` → ``stroke_down``/``stroke_up``（``duration`` = 动作时值）；
-    - :class:`Pluck` → ``pluck``（``strings`` 取实例化后的弦号，``duration`` = 动作时值）；
-    - :class:`Rest` → ``rest``（``duration`` = 休止时值）。
+    - :class:`Stroke` → ``stroke_down``/``stroke_up``（``duration`` + ``accent``）；
+    - :class:`Pluck` → ``pluck``（``strings`` 取实例化后的弦号，``duration`` + ``accent``）；
+    - :class:`Rest` → ``rest``（``duration``，accent 取默认 ``"default"``）。
 
-    序列所有动作 ``duration`` 之和 = 栅格总时值（``4 × beats``，由
+    序列所有动作 ``duration`` 之和 = 栅格总时值（``ticks_per_beat × beats``，由
     :class:`RhythmGrid` 不变量保证），时间轴完整对齐。时值是动作自身的属性，
     不再由 ``None`` 格位置推断。
     """
@@ -447,9 +523,9 @@ def fingering_sequence(grid: RhythmGrid) -> tuple[FingeringAction, ...]:
     for c in grid.cells:
         if isinstance(c, Stroke):
             kind = "stroke_down" if c.direction == "D" else "stroke_up"
-            actions.append(FingeringAction(kind=kind, strings=None, duration=c.duration))
+            actions.append(FingeringAction(kind=kind, strings=None, duration=c.duration, accent=c.accent))
         elif isinstance(c, Pluck):
-            actions.append(FingeringAction(kind="pluck", strings=c.strings, duration=c.duration))
+            actions.append(FingeringAction(kind="pluck", strings=c.strings, duration=c.duration, accent=c.accent))
         else:  # Rest
             actions.append(FingeringAction(kind="rest", strings=None, duration=c.duration))
     return tuple(actions)

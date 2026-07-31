@@ -89,13 +89,17 @@ uv run rhythm-web                       # 或 uv run python -m web_manager.serve
 
 ### 栅格动作自带显式时值
 
-所有节奏型落在 **16 分音符时值**上：一拍 = 4 个 16 分位置。栅格每个动作（扫弦/拨弦/休止）自带 `duration`（占多少个 16 分位置），直接表达该动作的时值：
+所有节奏型落在 **16 分音符时值**上，但「一拍 = 多少个 16 分位置」由拍号分母决定（`ticks_per_beat`）：`/4` 拍号（4/4、3/4）一拍 = 4 个 16 分位置，`/8` 拍号（6/8、3/8）一拍 = 附点 8 分 = 3 个 16 分位置。栅格每个动作（扫弦/拨弦/休止）自带 `duration`（占多少个 16 分位置），直接表达该动作的时值：
 
-- `Stroke("D")` 下扫 / `Stroke("U")` 上扫（`direction` + `duration`）
-- `Pluck(role=...)` 拨弦/琶音（`role` 音级角色 + 实例化后的弦号 + `duration`）
-- `Rest(duration)` 休止（真静默），休止本身也是一种「音符」，有自己的时值
+- `Stroke("D")` 下扫 / `Stroke("U")` 上扫（`direction` + `duration` + `accent`）
+- `Pluck(role=...)` 拨弦/琶音（`role` 音级角色 + 实例化后的弦号 + `duration` + `accent`）
+- `Rest(duration)` 休止（真静默），休止本身也是一种「音符」，有自己的时值（无 accent）
 
-延续（音持续多久）由发音动作的 `duration` 表达，休止由 `Rest` 表达，职责单一、符合乐理——不再由空格位置推断。序列所有动作 `duration` 之和 = 栅格总时值（`4 × beats`），时间轴完整对齐。转谱（`fingering_sequence`）与试听（`pattern_to_notelist`）共用同一套时值语义。
+发音动作的 `accent`（`strong`/`weak`/`default`）标记强弱拍，用于表达 6/8 等**复拍子**的拍内强弱分组（6/8 一小节 = [强 弱 弱][强 弱 弱]），试听时映射成 velocity。休止无强弱概念。
+
+延续（音持续多久）由发音动作的 `duration` 表达，休止由 `Rest` 表达，职责单一、符合乐理——不再由空格位置推断。序列所有动作 `duration` 之和 = 栅格总时值（`ticks_per_beat × beats`），时间轴完整对齐。转谱（`fingering_sequence`）与试听（`pattern_to_notelist`）共用同一套时值语义。
+
+模板自带 `time_signature`（如 `(6,8)`），选型据此筛同拍号专属模板——6/8 歌曲选 6/8 模板、拒 4/4 模板（跨拍号借用会被重罚，避免劈跨拍动作破坏附点律动）。默认 `(4,4)` 向后兼容现有 4/4 模板。
 
 ### 选型打分维度（代价相加）
 
@@ -107,7 +111,7 @@ uv run rhythm-web                       # 或 uv run python -m web_manager.serve
 4. **技法基线**（段落级混排）：基线为 `arpeggio` 时扫弦模板罚分、`strum` 时分解模板罚分
 5. **密度贴合**：模板密度与该段落 + 和弦位置的目标密度之差
 6. **整动机奖励**：占满一个专属整动机时减分
-7. **拍号契合**：非 4/4 拍下 4 拍周期模板罚分（仅显式给拍号时介入）
+7. **拍号契合**：模板自带 `time_signature`，与 `ctx.time_signature` 不一致时重罚（`W_TIME_SIG_MISMATCH`，量级大到不入候选），筛 6/8 专属模板、拒 4/4。无 ctx 拍号时按 4/4 处理
 8. **BPM 可演奏性**：高 BPM 下过密模板罚分、低 BPM 下高密度连续扫弦轻微罚分
 9. **扫弦可行性**：复用 `chord_fingering.count_muted`，全扫模板配不利闷弦结构时罚分
 10. **进行级连贯性**：相邻和弦拍数变化时密度方向一致的模板减分
@@ -169,7 +173,7 @@ uv run rhythm_main.py      # 节奏型选型/编排审计（内联断言）
 uv run main.py             # 指法枚举验证（内联断言 + 基准集）
 ```
 
-`rhythm_main.py` 每段演示都带 `assert`，断言失败即视为回归：栅格对齐（任意拍数总时值 = 4×拍数）、拍数门槛、进行级连贯性、技法基线、弦角色实例化、整段编排 DP 等。`main.py` 的核心回归是 `check_benchmark`——一组吉他教材常用指法（C / G / D / Am / F / C7 / Em7 ...）必须排进前 3 名，改 `chord_fingering/playability.py` 权重后必须重跑。
+`rhythm_main.py` 每段演示都带 `assert`，断言失败即视为回归：栅格对齐（任意拍数总时值 = `ticks_per_beat × 拍数`）、拍数门槛、进行级连贯性、技法基线、弦角色实例化、整段编排 DP、6/8 拍号契合（`check_68`）等。`main.py` 的核心回归是 `check_benchmark`——一组吉他教材常用指法（C / G / D / Am / F / C7 / Em7 ...）必须排进前 3 名，改 `chord_fingering/playability.py` 权重后必须重跑。
 
 ## 数据库工具
 

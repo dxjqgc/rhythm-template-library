@@ -6,7 +6,8 @@
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 4
+        "duration": 4,
+        "accent": "default"
       }
     ],
     "motif_beats": 1,
@@ -20,7 +21,11 @@
     ],
     "style": "folk",
     "technique": "strum",
-    "positions": []
+    "positions": [],
+    "time_signature": [
+      4,
+      4
+    ]
   },
   {
     "id": "folk D-DU",
@@ -29,17 +34,20 @@
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 4
+        "duration": 4,
+        "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "U",
-        "duration": 3
+        "duration": 3,
+        "accent": "default"
       }
     ],
     "motif_beats": 2,
@@ -54,7 +62,11 @@
     ],
     "style": "folk",
     "technique": "strum",
-    "positions": []
+    "positions": [],
+    "time_signature": [
+      4,
+      4
+    ]
   },
   {
     "id": "pop 8th-notes",
@@ -63,22 +75,26 @@
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "U",
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "U",
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       }
     ],
     "motif_beats": 1,
@@ -94,7 +110,11 @@
     ],
     "style": "pop",
     "technique": "strum",
-    "positions": []
+    "positions": [],
+    "time_signature": [
+      4,
+      4
+    ]
   },
   {
     "id": "rock 8th down",
@@ -103,12 +123,14 @@
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       }
     ],
     "motif_beats": 1,
@@ -123,7 +145,11 @@
     ],
     "style": "rock",
     "technique": "strum",
-    "positions": []
+    "positions": [],
+    "time_signature": [
+      4,
+      4
+    ]
   },
   {
     "id": "pop D-DU-U-DU",
@@ -132,32 +158,38 @@
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 4
+        "duration": 4,
+        "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "U",
-        "duration": 3
+        "duration": 3,
+        "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "U",
-        "duration": 4
+        "duration": 4,
+        "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "U",
-        "duration": 3
+        "duration": 3,
+        "accent": "default"
       }
     ],
     "motif_beats": 4,
@@ -170,7 +202,11 @@
     ],
     "style": "pop",
     "technique": "strum",
-    "positions": []
+    "positions": [],
+    "time_signature": [
+      4,
+      4
+    ]
   },
   {
     "id": "D-D-DU (1拍16分)",
@@ -179,22 +215,26 @@
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "U",
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       }
     ],
     "motif_beats": 1,
@@ -209,7 +249,11 @@
     ],
     "style": "pop",
     "technique": "strum",
-    "positions": []
+    "positions": [],
+    "time_signature": [
+      4,
+      4
+    ]
   },
   {
     "id": "reggae off-beat",
@@ -222,7 +266,8 @@
       {
         "type": "stroke",
         "direction": "U",
-        "duration": 3
+        "duration": 3,
+        "accent": "default"
       }
     ],
     "motif_beats": 1,
@@ -237,7 +282,11 @@
     ],
     "style": "rock",
     "technique": "strum",
-    "positions": []
+    "positions": [],
+    "time_signature": [
+      4,
+      4
+    ]
   },
   {
     "id": "root-5-top2 (1拍)",
@@ -249,7 +298,8 @@
           "kind": "root",
           "region": null
         },
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -257,7 +307,8 @@
           "kind": "fifth",
           "region": "avoid_bass"
         },
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -266,7 +317,8 @@
           "n": 2,
           "span": "comfortable"
         },
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "rest",
@@ -287,7 +339,11 @@
     ],
     "style": "folk",
     "technique": "arpeggio",
-    "positions": []
+    "positions": [],
+    "time_signature": [
+      4,
+      4
+    ]
   },
   {
     "id": "53231323 (16分)",
@@ -299,7 +355,8 @@
           "kind": "root",
           "region": null
         },
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -307,7 +364,8 @@
           "kind": "fifth",
           "region": null
         },
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -315,7 +373,8 @@
           "kind": "root",
           "region": "treble"
         },
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -323,7 +382,8 @@
           "kind": "fifth",
           "region": null
         },
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -331,7 +391,8 @@
           "kind": "third",
           "region": "treble"
         },
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -339,7 +400,8 @@
           "kind": "fifth",
           "region": null
         },
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -347,7 +409,8 @@
           "kind": "root",
           "region": "treble"
         },
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -355,7 +418,8 @@
           "kind": "fifth",
           "region": null
         },
-        "duration": 1
+        "duration": 1,
+        "accent": "default"
       }
     ],
     "motif_beats": 2,
@@ -371,7 +435,11 @@
     ],
     "style": "folk",
     "technique": "arpeggio",
-    "positions": []
+    "positions": [],
+    "time_signature": [
+      4,
+      4
+    ]
   },
   {
     "id": "53231323 (8分)",
@@ -383,7 +451,8 @@
           "kind": "root",
           "region": null
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -391,7 +460,8 @@
           "kind": "fifth",
           "region": null
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -399,7 +469,8 @@
           "kind": "root",
           "region": "treble"
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -407,7 +478,8 @@
           "kind": "fifth",
           "region": null
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -415,7 +487,8 @@
           "kind": "third",
           "region": "treble"
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -423,7 +496,8 @@
           "kind": "fifth",
           "region": null
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -431,7 +505,8 @@
           "kind": "root",
           "region": "treble"
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -439,7 +514,8 @@
           "kind": "fifth",
           "region": null
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       }
     ],
     "motif_beats": 4,
@@ -453,7 +529,11 @@
     ],
     "style": "folk",
     "technique": "arpeggio",
-    "positions": []
+    "positions": [],
+    "time_signature": [
+      4,
+      4
+    ]
   },
   {
     "id": "5323 (8分)",
@@ -465,7 +545,8 @@
           "kind": "root",
           "region": null
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -473,7 +554,8 @@
           "kind": "fifth",
           "region": null
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       }
     ],
     "motif_beats": 1,
@@ -489,7 +571,11 @@
     ],
     "style": "folk",
     "technique": "arpeggio",
-    "positions": []
+    "positions": [],
+    "time_signature": [
+      4,
+      4
+    ]
   },
   {
     "id": "arpeggio placeholder",
@@ -498,7 +584,8 @@
       {
         "type": "pluck",
         "role": null,
-        "duration": 4
+        "duration": 4,
+        "accent": "default"
       }
     ],
     "motif_beats": 1,
@@ -514,7 +601,11 @@
     ],
     "style": "folk",
     "technique": "arpeggio",
-    "positions": []
+    "positions": [],
+    "time_signature": [
+      4,
+      4
+    ]
   },
   {
     "id": "arpeggio cadence (tail)",
@@ -526,7 +617,8 @@
           "kind": "root",
           "region": null
         },
-        "duration": 4
+        "duration": 4,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -534,7 +626,8 @@
           "kind": "fifth",
           "region": "avoid_bass"
         },
-        "duration": 4
+        "duration": 4,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -542,14 +635,16 @@
           "kind": "third",
           "region": null
         },
-        "duration": 4
+        "duration": 4,
+        "accent": "default"
       },
       {
         "type": "pluck",
         "role": {
           "kind": "all"
         },
-        "duration": 4
+        "duration": 4,
+        "accent": "default"
       }
     ],
     "motif_beats": 4,
@@ -566,6 +661,10 @@
     "technique": "arpeggio",
     "positions": [
       "tail"
+    ],
+    "time_signature": [
+      4,
+      4
     ]
   },
   {
@@ -578,7 +677,8 @@
           "kind": "root",
           "region": null
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -586,21 +686,24 @@
           "kind": "fifth",
           "region": "avoid_bass"
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       },
       {
         "type": "pluck",
         "role": {
           "kind": "all"
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       },
       {
         "type": "pluck",
         "role": {
           "kind": "all"
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "default"
       }
     ],
     "motif_beats": 2,
@@ -618,11 +721,124 @@
     "technique": "arpeggio",
     "positions": [
       "tail"
+    ],
+    "time_signature": [
+      4,
+      4
     ]
   },
   {
-    "id": "my-pattern-test-1",
-    "name": "my-pattern-test-1",
+    "id": "6/8 folk D-DU",
+    "name": "6/8 folk D-DU",
+    "grid_motif": [
+      {
+        "type": "stroke",
+        "direction": "D",
+        "duration": 3,
+        "accent": "strong"
+      },
+      {
+        "type": "stroke",
+        "direction": "U",
+        "duration": 3,
+        "accent": "weak"
+      }
+    ],
+    "motif_beats": 2,
+    "min_beats": 2,
+    "ideal_beats": [
+      2,
+      4
+    ],
+    "sections": [
+      "verse",
+      "prechorus"
+    ],
+    "style": "folk",
+    "technique": "strum",
+    "positions": [],
+    "time_signature": [
+      6,
+      8
+    ]
+  },
+  {
+    "id": "6/8 pop D-·U-DU",
+    "name": "6/8 pop D-·U-DU",
+    "grid_motif": [
+      {
+        "type": "stroke",
+        "direction": "D",
+        "duration": 3,
+        "accent": "strong"
+      },
+      {
+        "type": "stroke",
+        "direction": "D",
+        "duration": 1,
+        "accent": "default"
+      },
+      {
+        "type": "stroke",
+        "direction": "U",
+        "duration": 2,
+        "accent": "weak"
+      }
+    ],
+    "motif_beats": 2,
+    "min_beats": 2,
+    "ideal_beats": [
+      2
+    ],
+    "sections": [
+      "chorus"
+    ],
+    "style": "pop",
+    "technique": "strum",
+    "positions": [],
+    "time_signature": [
+      6,
+      8
+    ]
+  },
+  {
+    "id": "6/8 rock dotted down",
+    "name": "6/8 rock dotted down",
+    "grid_motif": [
+      {
+        "type": "stroke",
+        "direction": "D",
+        "duration": 2,
+        "accent": "strong"
+      },
+      {
+        "type": "stroke",
+        "direction": "D",
+        "duration": 1,
+        "accent": "default"
+      }
+    ],
+    "motif_beats": 1,
+    "min_beats": 1,
+    "ideal_beats": [
+      1,
+      2,
+      4
+    ],
+    "sections": [
+      "chorus"
+    ],
+    "style": "rock",
+    "technique": "strum",
+    "positions": [],
+    "time_signature": [
+      6,
+      8
+    ]
+  },
+  {
+    "id": "6/8 arpeggio root-5-top",
+    "name": "6/8 arpeggio root-5-top",
     "grid_motif": [
       {
         "type": "pluck",
@@ -630,15 +846,17 @@
           "kind": "root",
           "region": null
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "strong"
       },
       {
         "type": "pluck",
         "role": {
-          "kind": "third",
-          "region": null
+          "kind": "fifth",
+          "region": "avoid_bass"
         },
-        "duration": 2
+        "duration": 1,
+        "accent": "default"
       },
       {
         "type": "pluck",
@@ -647,25 +865,79 @@
           "n": 2,
           "span": "comfortable"
         },
-        "duration": 2
+        "duration": 2,
+        "accent": "weak"
       },
       {
         "type": "pluck",
         "role": {
-          "kind": "root",
-          "region": "treble"
+          "kind": "fifth",
+          "region": null
         },
-        "duration": 2
+        "duration": 1,
+        "accent": "default"
       }
     ],
     "motif_beats": 2,
     "min_beats": 2,
-    "ideal_beats": [],
-    "sections": [
-      "chorus"
+    "ideal_beats": [
+      2,
+      4
     ],
-    "style": "pop",
+    "sections": [
+      "verse",
+      "bridge"
+    ],
+    "style": "folk",
     "technique": "arpeggio",
-    "positions": []
+    "positions": [],
+    "time_signature": [
+      6,
+      8
+    ]
+  },
+  {
+    "id": "6/8 arpeggio cadence (tail)",
+    "name": "6/8 arpeggio cadence (tail)",
+    "grid_motif": [
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": null
+        },
+        "duration": 3,
+        "accent": "strong"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "third",
+          "region": null
+        },
+        "duration": 3,
+        "accent": "weak"
+      }
+    ],
+    "motif_beats": 2,
+    "min_beats": 2,
+    "ideal_beats": [
+      2,
+      4
+    ],
+    "sections": [
+      "verse",
+      "bridge",
+      "outro"
+    ],
+    "style": "folk",
+    "technique": "arpeggio",
+    "positions": [
+      "tail"
+    ],
+    "time_signature": [
+      6,
+      8
+    ]
   }
 ]

@@ -61,6 +61,7 @@ function fillForm() {
   $("f-style").value = t.style;
   $("f-motif").value = t.motif_beats;
   $("f-min").value = t.min_beats;
+  $("f-timesig").value = (t.time_signature || [4, 4]).join("/");
   $("f-ideal").value = (t.ideal_beats || []).join(",");
   $("f-sections").value = (t.sections || []).join(",");
   $("f-positions").value = (t.positions || []).join(",");
@@ -71,12 +72,15 @@ function fillForm() {
 function readForm() {
   const motif = parseInt($("f-motif").value, 10) || 1;
   const grid = readGrid();
+  const tsParts = ($("f-timesig").value || "4/4").split("/").map(s => parseInt(s.trim(), 10));
+  const timeSig = tsParts.length === 2 && tsParts.every(n => Number.isFinite(n) && n > 0) ? tsParts : [4, 4];
   return {
     name: $("f-name").value.trim(),
     technique: $("f-technique").value,
     style: $("f-style").value,
     motif_beats: motif,
     min_beats: parseInt($("f-min").value, 10) || motif,
+    time_signature: timeSig,
     ideal_beats: parseCsvInt($("f-ideal").value),
     sections: parseCsv($("f-sections").value),
     positions: parseCsv($("f-positions").value),
@@ -87,8 +91,9 @@ function parseCsv(s) { return (s || "").split(",").map(x => x.trim()).filter(Boo
 function parseCsvInt(s) { return parseCsv(s).map(x => parseInt(x, 10)).filter(x => !isNaN(x)); }
 
 // ── 栅格编辑器 ───────────────────────────────────────────────────────
-// 内部表示每格: {type: 'stroke'|'rest'|'pluck', direction?, role?}
+// 内部表示每格: {type: 'stroke'|'rest'|'pluck', direction?, role?, duration, accent?}
 // role: null | {kind:'root|third|fifth|seventh', region} | {kind:'topn', n, span} | {kind:'all'}
+// accent: 'default'|'strong'|'weak'（仅 stroke/pluck，试听映射 velocity；rest 无）
 
 const ROLE_KINDS_DEGREE = ["root", "third", "fifth", "seventh"];
 const REGIONS = ["", "bass", "treble", "avoid_bass"];
@@ -98,16 +103,16 @@ const SPANS = ["", "comfortable", "narrow"];
 function cellsFromData(cells) {
   return cells.map(c => {
     const cell = { type: c.type, duration: c.duration || 1 };  // duration 默认 1 兼容旧存档
-    if (c.type === "stroke") cell.direction = c.direction;
-    if (c.type === "pluck") cell.role = c.role || null;
+    if (c.type === "stroke") { cell.direction = c.direction; cell.accent = c.accent || "default"; }
+    if (c.type === "pluck") { cell.role = c.role || null; cell.accent = c.accent || "default"; }
     return cell;
   });
 }
 function cellsToData(cells) {
   return cells.map(c => {
     const out = { type: c.type, duration: c.duration };
-    if (c.type === "stroke") out.direction = c.direction;
-    if (c.type === "pluck") out.role = c.role;
+    if (c.type === "stroke") { out.direction = c.direction; out.accent = c.accent || "default"; }
+    if (c.type === "pluck") { out.role = c.role; out.accent = c.accent || "default"; }
     return out;
   });
 }
@@ -148,9 +153,9 @@ function makeCellEl(cell, idx) {
                 || (t === "pluck" && cell.type === "pluck");
     if (active) b.classList.add("active");
     b.onclick = () => {
-      if (t === "stroke") { cell.type = "stroke"; cell.direction = sub; delete cell.role; }
-      else if (t === "rest") { cell.type = "rest"; delete cell.direction; delete cell.role; }
-      else { cell.type = "pluck"; delete cell.direction; if (!cell.role) cell.role = { kind: "root", region: null }; }
+      if (t === "stroke") { cell.type = "stroke"; cell.direction = sub; delete cell.role; if (!cell.accent) cell.accent = "default"; }
+      else if (t === "rest") { cell.type = "rest"; delete cell.direction; delete cell.role; delete cell.accent; }
+      else { cell.type = "pluck"; delete cell.direction; if (!cell.role) cell.role = { kind: "root", region: null }; if (!cell.accent) cell.accent = "default"; }
       paintGrid();
     };
     seg.appendChild(b);
@@ -160,6 +165,22 @@ function makeCellEl(cell, idx) {
   // 拨弦角色编辑
   if (cell.type === "pluck") {
     div.appendChild(makeRoleEl(cell));
+  }
+
+  // 重音选择（仅发音动作 stroke/pluck；rest 无强弱）。strong/weak/default -> 试听 velocity。
+  if (cell.type === "stroke" || cell.type === "pluck") {
+    if (!cell.accent) cell.accent = "default";
+    const accWrap = document.createElement("div"); accWrap.className = "acc-row";
+    const accLbl = document.createElement("span"); accLbl.textContent = "重音"; accLbl.style.fontSize = "11px";
+    const accSel = document.createElement("select");
+    for (const a of ["default", "strong", "weak"]) {
+      const o = document.createElement("option"); o.value = a; o.textContent = a;
+      if (cell.accent === a) o.selected = true;
+      accSel.appendChild(o);
+    }
+    accSel.onchange = () => { cell.accent = accSel.value; };
+    accWrap.appendChild(accLbl); accWrap.appendChild(accSel);
+    div.appendChild(accWrap);
   }
 
   // 时值输入（占多少 16 分位置）。每个动作/休止自带 duration，逐格控制延续/断音。
@@ -264,7 +285,8 @@ function newTemplate() {
   current = {
     id, name: id, technique: "strum", style: "pop",
     motif_beats: motif, min_beats: motif, ideal_beats: [], sections: ["chorus"], positions: [],
-    grid_motif: [{ type: "stroke", direction: "D", duration: 4 }],
+    time_signature: [4, 4],
+    grid_motif: [{ type: "stroke", direction: "D", duration: 4, accent: "default" }],
   };
   // 先建后端记录，再填表单
   api("POST", "/api/templates", { id, template: readFormOnInit() }).then(() => {
@@ -285,19 +307,27 @@ function readFormOnInit() {
     name: current.name, technique: current.technique, style: current.style,
     motif_beats: current.motif_beats, min_beats: current.min_beats,
     ideal_beats: current.ideal_beats, sections: current.sections, positions: current.positions,
+    time_signature: current.time_signature || [4, 4],
     grid_motif: current.grid_motif,
   };
 }
 
 // ── 追加格 ───────────────────────────────────────────────────────────
+// tpb 从模板拍号派生（/4→4、/8→3），与后端 StrumPattern.ticks_per_beat 同规则。
+function currentTicksPerBeat() {
+  const ts = current && current.time_signature;
+  if (!ts) return 4;
+  return ts[1] === 8 ? 3 : 4;
+}
 $("add-cell-btn").onclick = () => { gridCells.push({ type: "rest", duration: 1 }); paintGrid(); updateMotifSum(); };
-$("add-beat-btn").onclick = () => { gridCells.push({ type: "rest", duration: 4 }); paintGrid(); updateMotifSum(); };
+$("add-beat-btn").onclick = () => { gridCells.push({ type: "rest", duration: currentTicksPerBeat() }); paintGrid(); updateMotifSum(); };
 
-// 动机时值之和 vs 4*motif_beats 显示（后端 __post_init__ 要求 sum==4*motif）。
+// 动机时值之和 vs tpb*motif_beats 显示（后端 __post_init__ 要求 sum==tpb*motif）。
 function motifTotal() { return gridCells.reduce((s, c) => s + (c.duration || 1), 0); }
 function updateMotifSum() {
   const motif = Math.max(1, parseInt($("f-motif").value, 10) || 1);
-  const need = 4 * motif;
+  const tpb = currentTicksPerBeat();
+  const need = tpb * motif;
   const got = motifTotal();
   const el = $("motif-sum") || (() => { const e = document.createElement("div"); e.id = "motif-sum"; e.style.cssText = "font-size:12px;margin-top:4px;"; $("grid").parentNode.insertBefore(e, $("grid").nextSibling); return e; })();
   el.textContent = `时值之和 ${got} / 需要 ${need}（${got === need ? "✓对齐" : "✗未对齐，保存会被拒"}）`;
@@ -411,11 +441,12 @@ $("stop-btn").onclick = stopPlay;
 $("new-btn").onclick = newTemplate;
 $("search").oninput = renderTable;
 
-// 动机拍数改变时，自动对齐 grid 时值之和到 4*motif（补 duration=1 rest 或削减末格 duration），
-// 避免发到后端被 __post_init__ 拒（sum(duration) 必须 == 4 * motif_beats）。同时保证 min_beats >= motif。
+// 动机拍数改变时，自动对齐 grid 时值之和到 tpb*motif（补 duration=1 rest 或削减末格 duration），
+// 避免发到后端被 __post_init__ 拒（sum(duration) 必须 == tpb * motif_beats）。同时保证 min_beats >= motif。
 $("f-motif").onchange = () => {
   const motif = Math.max(1, parseInt($("f-motif").value, 10) || 1);
   $("f-motif").value = motif;
+  syncCurrentTimeSig();
   alignGridToMotif(motif);
   const minV = parseInt($("f-min").value, 10) || motif;
   $("f-min").value = Math.max(minV, motif);
@@ -423,9 +454,22 @@ $("f-motif").onchange = () => {
   updateMotifSum();
 };
 
-// 把 grid 时值之和调整到 4*motif：不足补 duration=1 rest，超了从末格削减 duration、削光则删格。
+// 拍号改变时同步到 current 并重算对齐（tpb 可能从 4 变 3，需要重新对齐 grid 时值）。
+function syncCurrentTimeSig() {
+  if (!current) return;
+  const tsParts = ($("f-timesig").value || "4/4").split("/").map(s => parseInt(s.trim(), 10));
+  current.time_signature = tsParts.length === 2 && tsParts.every(n => Number.isFinite(n) && n > 0) ? tsParts : [4, 4];
+}
+$("f-timesig").onchange = () => {
+  syncCurrentTimeSig();
+  alignGridToMotif(Math.max(1, parseInt($("f-motif").value, 10) || 1));
+  paintGrid();
+  updateMotifSum();
+};
+
+// 把 grid 时值之和调整到 tpb*motif：不足补 duration=1 rest，超了从末格削减 duration、削光则删格。
 function alignGridToMotif(motif) {
-  const need = 4 * motif;
+  const need = currentTicksPerBeat() * motif;
   let total = motifTotal();
   while (total < need) { gridCells.push({ type: "rest", duration: 1 }); total += 1; }
   while (total > need) {

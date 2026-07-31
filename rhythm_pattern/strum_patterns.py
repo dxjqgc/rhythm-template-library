@@ -356,6 +356,84 @@ STRUM_PATTERNS: list[StrumPattern] = [
         technique="arpeggio",
         positions=("tail",),
     ),
+
+    # ── 6/8 拍号模板（附点 8 分拍，一小节 2 拍 = 6 tick，每附点拍 [强 弱 弱]）──
+    # time_signature=(6,8)：选型器据此在 6/8 歌曲里筛这些专属模板，4/4 模板吃
+    # W_TIME_SIG_MISMATCH 重罚让位。accent 标强/弱拍，试听映射 velocity 体现强弱分组。
+    StrumPattern(
+        name="6/8 folk D-DU",
+        # 2 拍动机（1 小节）：第 1 附点拍下扫（强）、第 2 附点拍上扫（弱）。最简 6/8 民谣扫弦，
+        # 一小节一下一上，对应 [D··][U··] 的附点律动。
+        grid_motif=(Stroke("D", 3, "strong"), Stroke("U", 3, "weak")),
+        motif_beats=2,
+        min_beats=2,
+        ideal_beats=(2, 4),
+        sections=("verse", "prechorus"),
+        style="folk",
+        time_signature=(6, 8),
+    ),
+    StrumPattern(
+        name="6/8 pop D-·U-DU",
+        # 2 拍动机（1 小节）：第 1 附点拍下扫（强，3 tick）；第 2 附点拍「下(16分)+上(8分附点收)」，
+        # 第二拍前加 16 分下扫增加推动力，流行副歌 6/8 扫弦。对应 [D··][DU·]。
+        grid_motif=(Stroke("D", 3, "strong"), Stroke("D", 1), Stroke("U", 2, "weak")),
+        motif_beats=2,
+        min_beats=2,
+        ideal_beats=(2,),
+        sections=("chorus",),
+        style="pop",
+        time_signature=(6, 8),
+    ),
+    StrumPattern(
+        name="6/8 rock dotted down",
+        # 1 拍动机（半小节，平铺 2 遍 = 1 小节）：每附点拍「下(2 tick 强)+下(1 tick)」，
+        # 摇滚 6/8 全下扫，对应 [DD·] 循环。min_beats=1 覆盖任意偶数拍 6/8 和弦。
+        grid_motif=(Stroke("D", 2, "strong"), Stroke("D", 1)),
+        motif_beats=1,
+        min_beats=1,
+        ideal_beats=(1, 2, 4),
+        sections=("chorus",),
+        style="rock",
+        time_signature=(6, 8),
+    ),
+    StrumPattern(
+        name="6/8 arpeggio root-5-top",
+        # 2 拍动机（1 小节）分解：根音(2 tick 强)-五音(1 tick)-顶两弦(2 tick 弱)-五音(1 tick)。
+        # 经典 6/8 分解「根-五-顶-五」，对应 [Root· Fifth][Top2· Fifth] 的附点律动。
+        # 顶两弦用 TopN(2,'comfortable') 按 voicing 动态选，弦序随和弦走。
+        grid_motif=(
+            Pluck(role=Root(), duration=2, accent="strong"),
+            Pluck(role=Fifth("avoid_bass"), duration=1),
+            Pluck(role=TopN(2, "comfortable"), duration=2, accent="weak"),
+            Pluck(role=Fifth(), duration=1),
+        ),
+        motif_beats=2,
+        min_beats=2,
+        ideal_beats=(2, 4),
+        sections=("verse", "bridge"),
+        style="folk",
+        technique="arpeggio",
+        time_signature=(6, 8),
+    ),
+    StrumPattern(
+        name="6/8 arpeggio cadence (tail)",
+        # 2 拍动机收束琶音：根音(3 tick 强)→三音(3 tick 弱)，各占一附点拍，舒缓收尾。
+        # 标 positions=("tail")，段落末和弦 0 罚分、其他位置吃 W_POSITION 被压下（逐和弦
+        # 无位置信息时靠 W_POSITION 把它压在非 tail 位置，与 4/4 cadence 同机制）。
+        # ideal_beats=(2,4) 与 4/4 cadence short 一致——省 ideal 罚分，靠 positions 控 tail。
+        grid_motif=(
+            Pluck(role=Root(), duration=3, accent="strong"),
+            Pluck(role=Third(), duration=3, accent="weak"),
+        ),
+        motif_beats=2,
+        min_beats=2,
+        ideal_beats=(2, 4),
+        sections=("verse", "bridge", "outro"),
+        style="folk",
+        technique="arpeggio",
+        positions=("tail",),
+        time_signature=(6, 8),
+    ),
 ]
 
 
@@ -405,32 +483,40 @@ def get_pattern_source() -> PatternSource:
     return _default_source
 
 
-def _boom_chick_fallback() -> StrumPattern:
-    """取兜底 boom-chick：优先当前数据源，缺失时退回硬编码列表，再缺失则内联构造，
+def _boom_chick_fallback(time_signature: tuple[int, int] = (4, 4)) -> StrumPattern:
+    """取兜底模板：优先同拍号的 boom-chick，缺失时退回硬编码列表，再缺失则内联构造，
     保证总不崩。
 
-    - 当前数据源有 boom-chick → 用之；
-    - 否则退回硬编码 :data:`STRUM_PATTERNS`；
-    - 若硬编码也被改/删（极端），内联构造一个最小 boom-chick，绝不抛 ``StopIteration``。
+    - 当前数据源有同拍号 boom-chick → 用之；
+    - 否则退回硬编码 :data:`STRUM_PATTERNS` 找同拍号 boom-chick；
+    - 若硬编码也没有该拍号 boom-chick（如 6/8），取同拍号任意 min_beats=1 模板；
+    - 若同拍号全无（极端），内联构造一个最小 4/4 boom-chick，绝不抛 ``StopIteration``
+      ——极端场景塞个错拍号模板总比崩好，兑现「保证总不崩」。
     """
-    try:
-        return next(p for p in _default_source.patterns() if p.name == "boom-chick")
-    except StopIteration:
-        pass
-    try:
-        return next(p for p in STRUM_PATTERNS if p.name == "boom-chick")
-    except StopIteration:
-        # 硬编码也被改：内联兜底，兑现「保证总不崩」。
-        return StrumPattern(
-            name="boom-chick",
-            grid_motif=(Stroke("D", 4),),
-            motif_beats=1,
-            min_beats=1,
-            ideal_beats=(2, 4),
-            sections=("verse",),
-            style="folk",
-            technique="strum",
-        )
+    def _find_in(source) -> StrumPattern | None:
+        try:
+            return next(p for p in source if p.name == "boom-chick" and p.time_signature == time_signature)
+        except StopIteration:
+            return next((p for p in source if p.time_signature == time_signature and p.min_beats == 1), None)
+
+    found = _find_in(_default_source.patterns())
+    if found is not None:
+        return found
+    found = _find_in(STRUM_PATTERNS)
+    if found is not None:
+        return found
+    # 同拍号全无：内联 4/4 boom-chick 兜底（极端，保不崩）。
+    return StrumPattern(
+        name="boom-chick",
+        grid_motif=(Stroke("D", 4),),
+        motif_beats=1,
+        min_beats=1,
+        ideal_beats=(2, 4),
+        sections=("verse",),
+        style="folk",
+        technique="strum",
+        time_signature=(4, 4),
+    )
 
 
 # --- 打分权重（越大越劝退） ----------------------------------------------
@@ -447,9 +533,11 @@ W_INNER_MUTE = 1.0     # 扫弦可行性：内部闷音（扫弦要精确挡）�
 W_STYLE_MISMATCH = 5.0 # 风格不匹配：模板风格 != 请求风格时的固定罚分（不剔除，仅降级）
 W_TECHNIQUE = 6.0      # 技法基线不符：段落技法基线与模板技法不一致时的固定罚分（段落级混排关键维度）
 W_COHERENCE = 0.8      # 连贯性：与相邻和弦密度变化方向不一致时的罚分
-W_TIME_SIG = 2.5       # 拍号不契合：非 4/X 拍号下选用 motif_beats=4 的 4 拍周期模板的固定罚分
-                       # （与 W_SECTION 同量级：3/4 拍下 4 拍动机天然不周期对齐，属结构性错配）。
-                       # 仅 ctx.time_signature 显式给定且分子非 4 时触发，4/4 缺省不干预。
+W_TIME_SIG_MISMATCH = 50.0  # 跨拍号借用重罚：模板自带 time_signature 与请求拍号不一致时加。
+                            # 远大于其他维度总和（~20），让跨拍号模板实际不入候选（同拍号优先）；
+                            # 仅当同拍号模板全被拍数门槛硬筛掉时才可能被选——极端兜底场景下塞个错拍号
+                            # 模板总比崩好（保 boom-chick fallback 不变量）。仅 ctx.time_signature 显式给定
+                            # 时触发，4/4 缺省不干预。6/8 歌曲据此选 6/8 专属模板、拒 4/4。
 W_POSITION = 2.5       # 位置不契合：模板声明了 positions（非空）但当前位置不在其中时的固定罚分
                        # （与 W_SECTION 同量级）。位置中立的模板（positions 为空）不罚。
                        # 重点在 tail 收束处理：标 positions=("tail",) 的琶音收尾模板在非 tail 位置被压下。
@@ -473,18 +561,32 @@ W_BPM_LOW = 1.5        # 低 BPM 下高密度连续扫弦的罚分。慢歌用�
                        # 「冲」，与技法基线互补（基线管整段扫/拆，此维度管密度细节）。
 
 
-def _target_density(section: str, beats: int) -> float:
+def _beats_per_bar(time_signature: tuple[int, int]) -> int:
+    """一小节几拍：``/4`` 拍号 = 分子（4/4→4、3/4→3）；``/8`` 拍号 = 分子 // 3（6/8→2、3/8→1）。
+
+    ``/8`` 拍号下「一拍」= 附点 8 分，一小节的 8 分个数（分子）除以 3 得附点拍数。
+    供 :func:`_target_density` 把「满小节」阈值按拍号归一化（6/8 满 2 拍 vs 4/4 满 4 拍）。
+    """
+    num, den = time_signature
+    return num if den == 4 else num // 3
+
+
+def _target_density(section: str, beats: int, time_signature: tuple[int, int] = (4, 4)) -> float:
     """该段落 + 拍数下的目标节奏密度。
 
     副歌偏密、主歌偏疏；占拍数少时单拍密度略高（要在一拍内把动机弹完），
-    占拍数多时略低（4 拍可以慢慢扫）。数值经 ``rhythm_main.py`` 基准集标定。
+    占满一小节及以上时略低（可以慢慢扫）。数值经 ``rhythm_main.py`` 基准集标定。
+
+    ``beats >= 一小节拍数`` 的「满小节」阈值按拍号归一化：6/8 满 2 拍、4/4 满 4 拍，
+    避免裸 ``beats`` 阈值把 6/8 的 2 拍小节误判为「半小节」而压低密度。``beats <= 1``
+    的单拍语义与拍号无关，保持绝对。
     """
     base = {"verse": 0.35, "prechorus": 0.5, "chorus": 0.75, "bridge": 0.45, "outro": 0.3}
     d = base.get(section, 0.5)
-    # 占拍少 -> 单拍密度略高；占拍多 -> 略低。
+    # 占拍少 -> 单拍密度略高；占满一小节及以上 -> 略低。
     if beats <= 1:
         d += 0.1
-    elif beats >= 4:
+    elif beats >= _beats_per_bar(time_signature):
         d -= 0.05
     return max(0.0, min(1.0, d))
 
@@ -536,8 +638,9 @@ def pattern_cost(
     elif technique_baseline == "strum" and pattern.is_arpeggio:
         cost += W_TECHNIQUE
 
-    # 密度贴合。
-    target = _target_density(section, beats)
+    # 密度贴合。「满小节」阈值按拍号归一化（6/8 满 2 拍 vs 4/4 满 4 拍）。
+    ts = ctx.time_signature or (4, 4)
+    target = _target_density(section, beats, ts)
     cost += abs(pattern.density() - target) * W_DENSITY
 
     # 拍数理想区间：占几拍就用几拍周期的模板最顺。
@@ -555,12 +658,13 @@ def pattern_cost(
     ):
         cost -= W_WHOLE_MOTIF
 
-    # 拍号契合：仅在 ctx 显式给拍号且分子非 4 时介入。4 拍周期模板（motif_beats=4）
-    # 在 3/4、6/8 等拍号下天然不周期对齐（4 拍动机填不进 3 拍小节），罚固定分。
-    # 4/4 缺省不干预，避免所有模板都吃一次拍号罚分。
-    if ctx.time_signature is not None and ctx.time_signature[0] != 4:
-        if pattern.motif_beats == 4:
-            cost += W_TIME_SIG
+    # 拍号契合：模板自带 time_signature，与 ctx 拍号不一致即重罚到实际不入候选。
+    # 6/8 歌曲据此选 6/8 专属模板、拒 4/4 模板（反之亦然），避免跨拍号借用劈跨拍动作
+    # 破坏附点律动。ctx.time_signature 为 None 时按 4/4 处理（与旧式默认调用一致），
+    # 故 6/8 模板在无拍号的 4/4 默认选型里吃重罚、不参与——只有显式给 (6,8) 才用 6/8 模板。
+    ctx_ts = ctx.time_signature or (4, 4)
+    if pattern.time_signature != ctx_ts:
+        cost += W_TIME_SIG_MISMATCH
 
     # BPM 可演奏性：仅 ctx 显式给 bpm 时介入。
     # 高 BPM（> BPM_HIGH_THRESHOLD）：过密模板按超出密度阈值罚分，模拟手指/拨片极限。
@@ -633,10 +737,11 @@ def _voicing_muted(voicing: VoicingData | None, fretboard: "Fretboard") -> tuple
 def _instantiate_plucks(grid: RhythmGrid, voicing: VoicingData | None) -> RhythmGrid:
     """把栅格里 Pluck 的 role 按 voicing 实例化成具体弦号，填进 Pluck.strings。
 
-    扫弦 (Stroke) 与休止 (Rest) 格不动（duration 原样保留）。Pluck 格：``role`` 非 None
+    扫弦 (Stroke) 与休止 (Rest) 格不动（duration/accent 原样保留）。Pluck 格：``role`` 非 None
     且 voicing 可用时，调 ``role.resolve(voicing)`` 得弦号填入 ``strings``；解析失败或无
     voicing 时，``strings`` 保持 ``None``（拨弦但弦未定，不阻塞输出）。重建时 ``duration``
-    一并保留。模板层原 Pluck 不被修改--本函数返回新栅格，event 持有实例化后的栅格。
+    与 ``accent`` 一并保留。模板层原 Pluck 不被修改--本函数返回新栅格，event 持有实例化后的栅格。
+    ``ticks_per_beat`` 从输入栅格透传，维持 6/8 等 ``/8`` 拍号栅格的不变量。
     """
     if voicing is None:
         return grid  # 无 voicing，Pluck.strings 保持 None。
@@ -645,11 +750,11 @@ def _instantiate_plucks(grid: RhythmGrid, voicing: VoicingData | None) -> Rhythm
         if isinstance(c, Pluck) and c.role is not None:
             resolved = c.role.resolve(voicing)
             # resolved 为 None 表示该 role 在此 voicing 上无法解析（如省了五音还取五音）。
-            # 保留 role、strings=None，栅格结构不变，仅弦序未定。duration 保留。
-            new_cells.append(Pluck(role=c.role, strings=resolved, duration=c.duration))
+            # 保留 role、strings=None，栅格结构不变，仅弦序未定。duration/accent 保留。
+            new_cells.append(Pluck(role=c.role, strings=resolved, duration=c.duration, accent=c.accent))
         else:
             new_cells.append(c)
-    return RhythmGrid(tuple(new_cells))
+    return RhythmGrid(tuple(new_cells), ticks_per_beat=grid.ticks_per_beat)
 
 
 def _chord_candidates(
@@ -754,7 +859,7 @@ def enumerate_rhythm_patterns(
     progression = list(progression)
 
     # 预算每个和弦的目标密度，供连贯性判据用前后相邻差。
-    targets = [_target_density(eff_section, b) for _, b in progression]
+    targets = [_target_density(eff_section, b, ctx.time_signature or (4, 4)) for _, b in progression]
     # 预算每个和弦首选 voicing：扫弦用其闷弦结构，分解用其实例化弦角色。
     voicings = [_resolve_voicing(c, fretboard, stretch) for c, _ in progression]
     muted = [_voicing_muted(v, fretboard) for v in voicings]
@@ -777,8 +882,8 @@ def enumerate_rhythm_patterns(
 
         if not scored:
             # 拍数门槛把所有模板都筛掉了（理论不会发生，最小 min_beats=1）。
-            # 退路：用 boom-chick（min_beats=1）兜底，保证总有输出。
-            fallback = _boom_chick_fallback()
+            # 退路：用同拍号 boom-chick（min_beats=1）兜底，保证总有输出。
+            fallback = _boom_chick_fallback(ctx.time_signature or (4, 4))
             events.append(_instantiate_event(chord, beats, fallback, voicings[i]))
             continue
 
@@ -883,7 +988,7 @@ def arrange_progression(
         return []
 
     # 预算目标密度、voicing、闷音（与 enumerate_rhythm_patterns 同构）。
-    targets = [_target_density(eff_section, b) for _, b in progression]
+    targets = [_target_density(eff_section, b, ctx.time_signature or (4, 4)) for _, b in progression]
     voicings = [_resolve_voicing(c, fretboard, stretch) for c, _ in progression]
     muted = [_voicing_muted(v, fretboard) for v in voicings]
 
@@ -905,8 +1010,8 @@ def arrange_progression(
             density_neighbor_delta=neighbor_delta, ctx=pos_ctx,
         )
         if not scored:
-            # 拍数门槛兜底（理论不会发生）：塞 boom-chick 单候选，保证 DP 有路径。
-            fallback = _boom_chick_fallback()
+            # 拍数门槛兜底（理论不会发生）：塞同拍号 boom-chick 单候选，保证 DP 有路径。
+            fallback = _boom_chick_fallback(ctx.time_signature or (4, 4))
             scored = [(0.0, fallback)]
         scored.sort(key=lambda pair: pair[0])
         scored = scored[:k]

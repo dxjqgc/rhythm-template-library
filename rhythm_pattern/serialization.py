@@ -101,29 +101,35 @@ def _role_from_dict(d: dict | None) -> StringRole | None:
 def _cell_to_dict(cell: Cell) -> dict:
     """把一格栅格动作编码成 dict（含 ``duration``）。
 
-    - ``Stroke`` → ``{"type": "stroke", "direction": "D"/"U", "duration": N}``
-    - ``Rest``  → ``{"type": "rest", "duration": N}``
-    - ``Pluck`` → ``{"type": "pluck", "role": <role dict | null>, "duration": N}``（``strings`` 不存）
+    - ``Stroke`` → ``{"type": "stroke", "direction": "D"/"U", "duration": N, "accent": ...}``
+    - ``Rest``  → ``{"type": "rest", "duration": N}``（休止无 accent）
+    - ``Pluck`` → ``{"type": "pluck", "role": <role dict | null>, "duration": N, "accent": ...}``（``strings`` 不存）
+
+    ``accent`` 仅对发音动作输出；``Rest`` 不带 accent 键。
     """
     if isinstance(cell, Rest):
         return {"type": "rest", "duration": cell.duration}
     if isinstance(cell, Stroke):
-        return {"type": "stroke", "direction": cell.direction, "duration": cell.duration}
+        return {"type": "stroke", "direction": cell.direction, "duration": cell.duration, "accent": cell.accent}
     if isinstance(cell, Pluck):
-        return {"type": "pluck", "role": _role_to_dict(cell.role), "duration": cell.duration}
+        return {"type": "pluck", "role": _role_to_dict(cell.role), "duration": cell.duration, "accent": cell.accent}
     raise TypeError(f"不可序列化的栅格类型: {type(cell).__name__}")
 
 
 def _cell_from_dict(d: dict) -> Cell:
-    """从 dict 还原一格栅格动作。``duration`` 缺省时取 1（向后兼容旧无 duration 记录）。"""
+    """从 dict 还原一格栅格动作。
+
+    ``duration`` 缺省取 1、``accent`` 缺省取 ``"default"``（向后兼容旧无这些键的记录）。
+    """
     t = d.get("type")
     duration = d.get("duration", 1)
+    accent = d.get("accent", "default")
     if t == "rest":
         return Rest(duration)
     if t == "stroke":
-        return Stroke(d["direction"], duration)
+        return Stroke(d["direction"], duration, accent)
     if t == "pluck":
-        return Pluck(role=_role_from_dict(d.get("role")), duration=duration)
+        return Pluck(role=_role_from_dict(d.get("role")), duration=duration, accent=accent)
     raise ValueError(f"未知的栅格 type: {t!r}")
 
 
@@ -146,6 +152,7 @@ def pattern_to_dict(pattern: StrumPattern) -> dict:
         "style": pattern.style,
         "technique": pattern.technique,
         "positions": list(pattern.positions),
+        "time_signature": list(pattern.time_signature),
     }
 
 
@@ -154,6 +161,8 @@ def dict_to_pattern(d: dict) -> StrumPattern:
 
     重新构造 dataclass，``__post_init__`` 的不变量校验自动复用——数据库里的非法记录
     在此炸，不会留到选型时。``id`` 字段（若有）被忽略，不进构造。
+
+    ``time_signature`` 缺省取 ``(4, 4)``，向后兼容旧无拍号字段的记录。
     """
     return StrumPattern(
         name=d["name"],
@@ -165,6 +174,7 @@ def dict_to_pattern(d: dict) -> StrumPattern:
         style=d["style"],
         technique=d.get("technique", "strum"),
         positions=tuple(d.get("positions", ())),
+        time_signature=tuple(d.get("time_signature", (4, 4))),
     )
 
 

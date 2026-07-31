@@ -26,10 +26,12 @@
 """
 
 from .model import (
+    Accent,
     Cell,
     FingeringAction,
     Pluck,
     Position,
+    Rest,
     RhythmEvent,
     RhythmGrid,
     Stroke,

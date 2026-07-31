@@ -84,30 +84,34 @@ def pattern_to_notelist(
     返回::
 
         {
-          "bpm": 90, "ticks_per_beat": 4,
+          "bpm": 90, "ticks_per_beat": 4,            # 4/4→4、6/8→3，从模板拍号派生
           "notes": [{"midi":48,"start_tick":0,"duration_tick":4,"velocity":80}, ...],
-          "total_tick": 16,                       # = 4 * beats
-          "grid":  [{"tick":0,"kind":"stroke_down","duration_tick":4}, {"tick":4,"kind":"pluck","strings":[3,2],"duration_tick":2}, ...]
+          "total_tick": 16,                           # = ticks_per_beat * beats
+          "grid":  [{"tick":0,"kind":"stroke_down","duration_tick":4,"accent":"strong"}, ...]
         }
 
-    浏览器换算 ``秒 = tick * 60 / bpm / 4``。``total_tick`` 为 0（voicing 解析失败）
-    时 ``notes`` 为空，浏览器静默。
+    ``velocity`` 由动作 ``accent`` 映射（``strong``→110、``weak``→60、``default``→80），
+    体现 6/8 等复拍子的强弱分组。浏览器换算 ``秒 = tick * 60 / bpm / ticks_per_beat``。
+    ``total_tick`` 为 0（voicing 解析失败）时 ``notes`` 为空，浏览器静默。
     """
     voicing = resolve_voicing(chord, fretboard, max_stretch)
     event: RhythmEvent = instantiate_pattern(
         pattern, chord, fretboard, beats, max_stretch=max_stretch
     )
-    total_tick = 4 * beats
+    tpb = pattern.ticks_per_beat
+    total_tick = tpb * beats
     notes: list[dict[str, Any]] = []
     grid: list[dict[str, Any]] = []
 
     if voicing is None:
         # 无 voicing：扫弦/拨弦都无音高，仍给空 grid 占位。
-        return {"bpm": bpm, "ticks_per_beat": 4, "notes": [], "total_tick": total_tick, "grid": []}
+        return {"bpm": bpm, "ticks_per_beat": tpb, "notes": [], "total_tick": total_tick, "grid": []}
 
     string_to_midi = _voicing_midi_map(voicing)
     # 扫弦发出全部发音弦的音；预计算一次。
     all_voicing_midis = [m for _s, m in voicing.midi]  # type: ignore[attr-defined]
+    # accent -> velocity：strong 重、weak 轻、default 中。
+    velocity = {"strong": 110, "weak": 60, "default": 80}
 
     # 逐格遍历：每个动作的 duration_tick = cell.duration；Rest 静默、推进游标。
     cursor = 0
@@ -115,29 +119,31 @@ def pattern_to_notelist(
         if isinstance(cell, Rest):
             cursor += cell.duration
             continue
+        accent = cell.accent
+        vel = velocity.get(accent, 80)
         if isinstance(cell, Stroke):
             midis = all_voicing_midis
             kind = "stroke_down" if cell.direction == "D" else "stroke_up"
-            grid.append({"tick": cursor, "kind": kind, "duration_tick": cell.duration})
+            grid.append({"tick": cursor, "kind": kind, "duration_tick": cell.duration, "accent": accent})
         else:  # Pluck
             strings = cell.strings or ()
             kept = [s for s in strings if s in string_to_midi]
             midis = [string_to_midi[s] for s in kept]
-            grid.append({"tick": cursor, "kind": "pluck", "strings": list(kept), "duration_tick": cell.duration})
+            grid.append({"tick": cursor, "kind": "pluck", "strings": list(kept), "duration_tick": cell.duration, "accent": accent})
         for m in midis:
             notes.append(
                 {
                     "midi": m,
                     "start_tick": cursor,
                     "duration_tick": cell.duration,
-                    "velocity": 80,
+                    "velocity": vel,
                 }
             )
         cursor += cell.duration
 
     return {
         "bpm": bpm,
-        "ticks_per_beat": 4,
+        "ticks_per_beat": tpb,
         "notes": notes,
         "total_tick": total_tick,
         "grid": grid,

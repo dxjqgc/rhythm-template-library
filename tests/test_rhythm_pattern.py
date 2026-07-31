@@ -173,10 +173,11 @@ class TestTemplateLibrary:
         assert len(STRUM_PATTERNS) >= 4
 
     def test_all_patterns_have_consistent_metadata(self):
-        """每个模板元数据齐全：grid_motif 总时值 = 4*motif_beats，min_beats>=motif_beats，sections 非空，technique 与栅格内容一致。"""
+        """每个模板元数据齐全：grid_motif 总时值 = ticks_per_beat*motif_beats，min_beats>=motif_beats，sections 非空，technique 与栅格内容一致。"""
         for p in STRUM_PATTERNS:
-            assert sum(c.duration for c in p.grid_motif) == 4 * p.motif_beats, (
-                f"{p.name}: grid_motif 总时值 {sum(c.duration for c in p.grid_motif)} != 4*{p.motif_beats}"
+            assert sum(c.duration for c in p.grid_motif) == p.ticks_per_beat * p.motif_beats, (
+                f"{p.name}: grid_motif 总时值 {sum(c.duration for c in p.grid_motif)} "
+                f"!= ticks_per_beat({p.ticks_per_beat})*{p.motif_beats}"
             )
             assert p.min_beats >= p.motif_beats
             assert len(p.sections) > 0
