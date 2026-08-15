@@ -382,6 +382,12 @@ def required_pitch_classes(chord: "Chord") -> set[int]:
     pcs = set(chord.pitch_classes)
     if len(pcs) <= 3:
         return pcs
+    if chord.root is None:
+        # pytheory leaves root unset for some extension chords (add9/11/13);
+        # without a root we cannot tell which tones are the omittable fifth /
+        # eleventh, so keep them all (degrade to legacy "no omissions" behavior)
+        # rather than crashing on None.midi.
+        return pcs
     root = chord.root.midi % 12
     optional = set()
     fifth = (root + 7) % 12

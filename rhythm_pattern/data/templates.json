@@ -25,6 +25,11 @@
     "time_signature": [
       4,
       4
+    ],
+    "tags": [
+      "guitar",
+      "country",
+      "slow"
     ]
   },
   {
@@ -66,6 +71,11 @@
     "time_signature": [
       4,
       4
+    ],
+    "tags": [
+      "guitar",
+      "country",
+      "soft"
     ]
   },
   {
@@ -114,6 +124,12 @@
     "time_signature": [
       4,
       4
+    ],
+    "tags": [
+      "pop",
+      "fast",
+      "drums",
+      "beat"
     ]
   },
   {
@@ -149,6 +165,13 @@
     "time_signature": [
       4,
       4
+    ],
+    "tags": [
+      "rock",
+      "loud",
+      "fast",
+      "drums",
+      "metal"
     ]
   },
   {
@@ -206,6 +229,12 @@
     "time_signature": [
       4,
       4
+    ],
+    "tags": [
+      "pop",
+      "fast",
+      "drums",
+      "beat"
     ]
   },
   {
@@ -253,6 +282,12 @@
     "time_signature": [
       4,
       4
+    ],
+    "tags": [
+      "pop",
+      "fast",
+      "loud",
+      "drums"
     ]
   },
   {
@@ -286,6 +321,11 @@
     "time_signature": [
       4,
       4
+    ],
+    "tags": [
+      "rock",
+      "beat",
+      "fast"
     ]
   },
   {
@@ -343,6 +383,12 @@
     "time_signature": [
       4,
       4
+    ],
+    "tags": [
+      "guitar",
+      "slow",
+      "soft",
+      "classical"
     ]
   },
   {
@@ -439,6 +485,11 @@
     "time_signature": [
       4,
       4
+    ],
+    "tags": [
+      "guitar",
+      "slow",
+      "classical"
     ]
   },
   {
@@ -533,6 +584,13 @@
     "time_signature": [
       4,
       4
+    ],
+    "tags": [
+      "guitar",
+      "slow",
+      "soft",
+      "classical",
+      "new age"
     ]
   },
   {
@@ -575,6 +633,11 @@
     "time_signature": [
       4,
       4
+    ],
+    "tags": [
+      "guitar",
+      "slow",
+      "soft"
     ]
   },
   {
@@ -605,6 +668,13 @@
     "time_signature": [
       4,
       4
+    ],
+    "tags": [
+      "guitar",
+      "slow",
+      "soft",
+      "classical",
+      "ambient"
     ]
   },
   {
@@ -665,6 +735,14 @@
     "time_signature": [
       4,
       4
+    ],
+    "tags": [
+      "guitar",
+      "slow",
+      "soft",
+      "classical",
+      "new age",
+      "ambient"
     ]
   },
   {
@@ -725,6 +803,12 @@
     "time_signature": [
       4,
       4
+    ],
+    "tags": [
+      "guitar",
+      "slow",
+      "soft",
+      "classical"
     ]
   },
   {
@@ -760,6 +844,12 @@
     "time_signature": [
       6,
       8
+    ],
+    "tags": [
+      "guitar",
+      "country",
+      "soft",
+      "slow"
     ]
   },
   {
@@ -799,6 +889,12 @@
     "time_signature": [
       6,
       8
+    ],
+    "tags": [
+      "pop",
+      "fast",
+      "drums",
+      "beat"
     ]
   },
   {
@@ -834,6 +930,13 @@
     "time_signature": [
       6,
       8
+    ],
+    "tags": [
+      "rock",
+      "loud",
+      "fast",
+      "drums",
+      "metal"
     ]
   },
   {
@@ -894,6 +997,12 @@
     "time_signature": [
       6,
       8
+    ],
+    "tags": [
+      "guitar",
+      "slow",
+      "soft",
+      "classical"
     ]
   },
   {
@@ -938,6 +1047,13 @@
     "time_signature": [
       6,
       8
+    ],
+    "tags": [
+      "guitar",
+      "slow",
+      "soft",
+      "classical",
+      "new age"
     ]
   }
 ]

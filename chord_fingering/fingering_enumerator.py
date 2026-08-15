@@ -297,7 +297,7 @@ def enumerate_fingerings(
         chord = pytheory.Chord.from_symbol(chord)
 
     target_pcs = set(chord.pitch_classes)
-    root_pc = _pitch_class(chord.root)
+    root_pc = _pitch_class(chord.root) if chord.root is not None else None
     open_tones = fretboard.tones               # 低音弦 -> 高音弦
 
     # 必需音级：playable 模式下允许按惯例省略五音等，legacy 模式要求全含。

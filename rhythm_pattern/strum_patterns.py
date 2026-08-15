@@ -107,7 +107,9 @@ class SelectionContext:
         驱动目标密度与段落契合。``None`` -> 默认 ``"chorus"``。
     style
         请求风格，``"folk" / "pop" / "rock"`` 之一。风格不匹配的模板不剔除、只降级。
-        ``None`` -> 默认 ``"pop"``。
+        ``None`` -> 默认 ``"pop"``。**注意**：当模板带 ``tags`` 且 ctx 给了
+        ``musicnn_tags`` 时，风格维度改由标签匹配度接管，``style`` 退回 fallback
+        （仅在模板无 tags 或 ctx 无 musicnn_tags 时生效）。
     technique_baseline
         段落技法基线，``"strum" / "arpeggio" / "mixed" / None``。基线明确时技法不符
         的模板罚分；``mixed`` / ``None``（默认）不罚。段落级混排的关键维度。
@@ -127,6 +129,13 @@ class SelectionContext:
         会按和弦在段落里的下标自动填此项，调用方通常无需手填。
     max_stretch
         取首选指法时的最大跨度约束，透传给 :func:`chord_fingering.enumerate_fingerings`。
+    musicnn_tags
+        musicnn 给出的段落风格标签集（带置信度），每项 ``(tag, likelihood)``，
+        likelihood ∈ 0..1。非空时启用标签匹配度打分（见 :func:`_tag_mismatch`），
+        且 ``style`` 维度降级为 fallback——模板有 ``tags`` 时只比 tags、不比 style。
+        ``None``（默认）-> 不介入标签维度，退回 ``style`` 罚分（向后兼容旧调用）。
+        这是 musicnn 接入后的主风格维度，比 ``style`` 三值枚举细：musicnn 的
+        ``guitar/slow`` 拉向分解模板、``drums/fast/rock`` 拉向扫弦模板。
 
     Notes
     -----
@@ -143,6 +152,7 @@ class SelectionContext:
     bpm: int | None = None
     position: Position | None = None
     max_stretch: int = 4
+    musicnn_tags: tuple[tuple[str, float], ...] | None = None
 
     @property
     def effective_section(self) -> str:
@@ -168,6 +178,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(2, 4),
         sections=("verse",),
         style="folk",
+        tags=("guitar", "country", "slow"),
     ),
     StrumPattern(
         name="folk D-DU",
@@ -178,6 +189,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(2, 4),
         sections=("verse", "prechorus"),
         style="folk",
+        tags=("guitar", "country", "soft"),
     ),
     StrumPattern(
         name="pop 8th-notes",
@@ -189,6 +201,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(1, 2, 4),
         sections=("chorus", "prechorus"),
         style="pop",
+        tags=("pop", "fast", "drums", "beat"),
     ),
     StrumPattern(
         name="rock 8th down",
@@ -199,6 +212,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(1, 2, 4),
         sections=("chorus",),
         style="rock",
+        tags=("rock", "loud", "fast", "drums", "metal"),
     ),
     StrumPattern(
         name="pop D-DU-U-DU",
@@ -215,6 +229,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(4,),
         sections=("chorus",),
         style="pop",
+        tags=("pop", "fast", "drums", "beat"),
     ),
     StrumPattern(
         name="D-D-DU (1拍16分)",
@@ -226,6 +241,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(1, 2),
         sections=("chorus", "prechorus"),
         style="pop",
+        tags=("pop", "fast", "loud", "drums"),
     ),
     StrumPattern(
         name="reggae off-beat",
@@ -236,6 +252,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(1, 2),
         sections=("chorus", "bridge"),
         style="rock",
+        tags=("rock", "beat", "fast"),
     ),
     # ── 分解模板（Pluck 带 StringRole，选型时按 voicing 实例化弦号）─────────
     StrumPattern(
@@ -256,6 +273,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         sections=("verse", "prechorus", "bridge"),
         style="folk",
         technique="arpeggio",
+        tags=("guitar", "slow", "soft", "classical"),
     ),
     StrumPattern(
         name="53231323 (16分)",
@@ -275,6 +293,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         sections=("verse", "prechorus", "bridge"),
         style="folk",
         technique="arpeggio",
+        tags=("guitar", "slow", "classical"),
     ),
     StrumPattern(
         name="53231323 (8分)",
@@ -293,6 +312,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         sections=("verse", "bridge"),
         style="folk",
         technique="arpeggio",
+        tags=("guitar", "slow", "soft", "classical", "new age"),
     ),
     StrumPattern(
         name="5323 (8分)",
@@ -307,6 +327,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         sections=("verse", "prechorus"),
         style="folk",
         technique="arpeggio",
+        tags=("guitar", "slow", "soft"),
     ),
     StrumPattern(
         name="arpeggio placeholder",
@@ -319,6 +340,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         sections=("verse", "prechorus", "bridge"),
         style="folk",
         technique="arpeggio",
+        tags=("guitar", "slow", "soft", "classical", "ambient"),
     ),
     StrumPattern(
         name="arpeggio cadence (tail)",
@@ -339,6 +361,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         style="folk",
         technique="arpeggio",
         positions=("tail",),
+        tags=("guitar", "slow", "soft", "classical", "new age", "ambient"),
     ),
     StrumPattern(
         name="arpeggio cadence short (tail)",
@@ -356,6 +379,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         style="folk",
         technique="arpeggio",
         positions=("tail",),
+        tags=("guitar", "slow", "soft", "classical"),
     ),
 
     # ── 6/8 拍号模板（附点 8 分拍，一小节 2 拍 = 6 tick，每附点拍 [强 弱 弱]）──
@@ -372,6 +396,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         sections=("verse", "prechorus"),
         style="folk",
         time_signature=(6, 8),
+        tags=("guitar", "country", "soft", "slow"),
     ),
     StrumPattern(
         name="6/8 pop D-·U-DU",
@@ -384,6 +409,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         sections=("chorus",),
         style="pop",
         time_signature=(6, 8),
+        tags=("pop", "fast", "drums", "beat"),
     ),
     StrumPattern(
         name="6/8 rock dotted down",
@@ -396,6 +422,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         sections=("chorus",),
         style="rock",
         time_signature=(6, 8),
+        tags=("rock", "loud", "fast", "drums", "metal"),
     ),
     StrumPattern(
         name="6/8 arpeggio root-5-top",
@@ -415,6 +442,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         style="folk",
         technique="arpeggio",
         time_signature=(6, 8),
+        tags=("guitar", "slow", "soft", "classical"),
     ),
     StrumPattern(
         name="6/8 arpeggio cadence (tail)",
@@ -434,6 +462,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         technique="arpeggio",
         positions=("tail",),
         time_signature=(6, 8),
+        tags=("guitar", "slow", "soft", "classical", "new age"),
     ),
 ]
 
@@ -532,6 +561,11 @@ W_WHOLE_MOTIF = 2.0    # 整动机奖励：beats 恰等于 motif_beats 且 ideal
 W_STRUM_MUTED = 1.2    # 扫弦可行性：高音侧闷音（丢顶音）每个的罚分
 W_INNER_MUTE = 1.0     # 扫弦可行性：内部闷音（扫弦要精确挡）每个的罚分
 W_STYLE_MISMATCH = 5.0 # 风格不匹配：模板风格 != 请求风格时的固定罚分（不剔除，仅降级）
+W_TAGS = 5.0           # 标签不匹配度（0..1）的代价系数。musicnn 接入后的主风格维度：
+                       # 模板有 tags 且 ctx 给了 musicnn_tags 时，按 _tag_mismatch 加权匹配度
+                       # 打分（全命中 0、全不匹配 5.0）。与 W_STYLE_MISMATCH 同量级——标签
+                       # 维度主导但不一票否决。模板无 tags 或 ctx 无 musicnn_tags 时退回
+                       # W_STYLE_MISMATCH（向后兼容）。
 W_TECHNIQUE = 6.0      # 技法基线不符：段落技法基线与模板技法不一致时的固定罚分（段落级混排关键维度）
 W_COHERENCE = 0.8      # 连贯性：与相邻和弦密度变化方向不一致时的罚分
 W_TIME_SIG_MISMATCH = 50.0  # 跨拍号借用重罚：模板自带 time_signature 与请求拍号不一致时加。
@@ -592,6 +626,41 @@ def _target_density(section: str, beats: int, time_signature: tuple[int, int] = 
     return max(0.0, min(1.0, d))
 
 
+def _tag_mismatch(
+    pattern_tags: tuple[str, ...],
+    musicnn_tags: tuple[tuple[str, float], ...],
+) -> float:
+    """musicnn 标签集与模板标签集的「不匹配度」∈ [0, 1]。
+
+    0 = 全命中（musicnn 高置信度标签都落在模板 tags 里），1 = 全不匹配。``pattern_cost``
+    乘 ``W_TAGS`` 计入代价。
+
+    用置信度加权的 Jaccard 变体：musicnn 给的 ``(tag, likelihood)`` 中 likelihood 高的
+    标签权重大。匹配度 = ``sum(likelihood for tag in musicnn if tag in pattern_tags) /
+    sum(all likelihood)``，不匹配度 = ``1 - 匹配度``。
+
+    模板标签无权重（``pattern_tags`` 同等重要），musicnn 标签带置信度。这样 musicnn 的
+    ``guitar 0.85 + slow 0.7`` 命中标了 ``guitar/slow`` 的分解模板时大幅减罚，而低置信度
+    命中影响小——正好实现「慢歌吉他拉分解、有鼓快歌拉扫弦」。不用纯交集大小（偏向标签
+    多的模板）也不用纯 Jaccard（忽略置信度）。
+
+    Parameters
+    ----------
+    pattern_tags
+        模板标签集（无权重）。
+    musicnn_tags
+        musicnn 输出的带置信度标签集，每项 ``(tag, likelihood)``，likelihood ∈ 0..1。
+    """
+    if not pattern_tags or not musicnn_tags:
+        return 1.0  # 任一为空视为全不匹配（调用方 pattern_cost 的分支已挡，不至此）
+    pat_set = set(pattern_tags)
+    total_w = sum(w for _, w in musicnn_tags)
+    if total_w <= 0:
+        return 1.0
+    hit_w = sum(w for t, w in musicnn_tags if t in pat_set)
+    return 1.0 - (hit_w / total_w)
+
+
 def pattern_cost(
     pattern: StrumPattern,
     *,
@@ -628,8 +697,14 @@ def pattern_cost(
     if section not in pattern.sections:
         cost += W_SECTION
 
-    # 风格不匹配：不剔除，只降级（允许跨风格借用，但排在后面）。
-    if pattern.style != style:
+    # 风格维度：标签匹配度（musicnn 接入后的主维度）+ style fallback。
+    # 模板有 tags 且 ctx 给了 musicnn_tags -> 按标签匹配度打分（_tag_mismatch * W_TAGS），
+    #   style 不再介入。musicnn 的 guitar/slow 拉分解、drums/fast/rock 拉扫弦即由此实现。
+    # 模板无 tags 或 ctx 无 musicnn_tags -> 退回原 style 罚分（向后兼容旧调用/旧 DB）。
+    #   不剔除，只降级（允许跨风格借用，但排在后面）。
+    if pattern.tags and ctx.musicnn_tags:
+        cost += _tag_mismatch(pattern.tags, ctx.musicnn_tags) * W_TAGS
+    elif pattern.style != style:
         cost += W_STYLE_MISMATCH
 
     # 技法基线（段落级混排关键维度）：基线明确时，技法不符的模板罚分。

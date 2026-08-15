@@ -153,6 +153,7 @@ def pattern_to_dict(pattern: StrumPattern) -> dict:
         "technique": pattern.technique,
         "positions": list(pattern.positions),
         "time_signature": list(pattern.time_signature),
+        "tags": list(pattern.tags),
     }
 
 
@@ -163,6 +164,7 @@ def dict_to_pattern(d: dict) -> StrumPattern:
     在此炸，不会留到选型时。``id`` 字段（若有）被忽略，不进构造。
 
     ``time_signature`` 缺省取 ``(4, 4)``，向后兼容旧无拍号字段的记录。
+    ``tags`` 缺省取空元组，向后兼容旧无标签字段的记录。
     """
     return StrumPattern(
         name=d["name"],
@@ -175,6 +177,7 @@ def dict_to_pattern(d: dict) -> StrumPattern:
         technique=d.get("technique", "strum"),
         positions=tuple(d.get("positions", ())),
         time_signature=tuple(d.get("time_signature", (4, 4))),
+        tags=tuple(d.get("tags", ())),
     )
 
 

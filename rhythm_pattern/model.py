@@ -241,6 +241,11 @@ class StrumPattern:
         :attr:`ticks_per_beat`（``/4``→4、``/8``→3）。默认 ``(4,4)`` 向后兼容现有 4/4
         模板。选型时模板拍号与请求拍号不一致会被重罚（实际不入候选），故 6/8 模板只用于
         6/8 歌曲、4/4 模板只用于 4/4 歌曲，禁止跨拍号借用（避免劈跨拍动作破坏附点律动）。
+    tags
+        musicnn 风格标签集，影响选型的标签子集（见词表）。空元组（默认）= 未标，选型时
+        退回 :attr:`style` 罚分 fallback；非空时按「标签匹配度」打分——musicnn 给出的
+        段落标签集与模板 ``tags`` 求置信度加权匹配度，匹配度高者减罚。是 musicnn 接入后
+        的主风格维度（比单一 ``style`` 三值枚举细），``style`` 保留作 fallback 与兜底。
     """
 
     name: str
@@ -256,6 +261,10 @@ class StrumPattern:
     非空时仅在这些位置 0 罚分、其他位置罚 ``W_POSITION``。只有需要特殊位置处理的模板
     （如琶音收尾）才填，如 ``("tail",)``。head 一般不做特殊处理，故无模板标 ``("head",)``。"""
     time_signature: tuple[int, int] = (4, 4)
+    tags: tuple[str, ...] = ()
+    """musicnn 风格标签集，影响选型的标签子集。空（默认）= 未标，选型退回 ``style`` 罚分
+    fallback；非空时按标签匹配度打分（见 :func:`strum_patterns._tag_mismatch`）。
+    模板标签无权重（同等重要），与 musicnn 带置信度的标签集做加权匹配。"""
 
     def __post_init__(self) -> None:
         if self.time_signature[1] not in (4, 8):
