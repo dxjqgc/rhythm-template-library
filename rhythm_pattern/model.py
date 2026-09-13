@@ -10,9 +10,9 @@
 
 - ``Stroke("D")`` - 下扫（down），由低音弦往高音弦扫，最常用的强拍动作；
 - ``Stroke("U")`` - 上扫（up），高音弦往低音弦回扫，常落在弱拍的「与」上；
-- ``Pluck(...)`` - 拨弦/琶音（arpeggio），一次拨一根或几根弦。分解节奏型的基本
-  动作。与扫弦是**不同**的右手动作，故单立一个类型，不挤进 ``Stroke``；二者可混排
-  在同一栅格里（段落级混排）。
+- ``Pluck(...)`` - 拨弦，一次拨一根或几根弦。分解（fingerpicking）与琶音（arpeggio）
+  节奏型的基本动作。与扫弦是**不同**的右手动作，故单立一个类型，不挤进 ``Stroke``；
+  二者可混排在同一栅格里（段落级混排）。
 - ``Rest(...)`` - 休止（真静默），该时段不发声。休止本身也是一种「音符」，有自己的时值。
 
 每个动作的 ``duration`` 显式记录它占多少个 16 分位置：发音动作的 duration = 音持续响多久，
@@ -36,6 +36,17 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from .string_role import StringRole
 
+
+Technique = Literal["strum", "fingerpicking", "arpeggio"]
+"""右手技法大类。
+
+- ``"strum"``         扫弦：Stroke 动作，一次扫过多根弦。
+- ``"fingerpicking"`` 分解和弦：Pluck 动作逐弦拨音（53231323 这类），一次拨一根或几根弦。
+- ``"arpeggio"``      琶音：Pluck(All()) 一拍/短时值内把和弦内音快速依次拨出，
+                      渲染为波浪箭头（alphaTab ArpeggioUp/Down），常见于段落收束。
+                      历史上 ``"arpeggio"`` 曾兼指分解（旧库 19 模板全是分解），拆分后
+                      分解归 ``"fingerpicking"``，``"arpeggio"`` 专指琶音扫出。
+"""
 
 Position = Literal["head", "middle", "tail"]
 """和弦在段落中的位置。
@@ -234,8 +245,9 @@ class StrumPattern:
     style
         风格，``{"folk","pop","rock"}`` 之一。选型时与请求风格一致才候选。
     technique
-        该模板的右手技法，``"strum"``（扫弦）/ ``"arpeggio"``（分解）。
-        由 ``is_strum`` / ``is_arpeggio`` 派生。musicnn 的段落技法基线据此罚分。
+        该模板的右手技法，``"strum"``（扫弦）/ ``"fingerpicking"``（分解）/
+        ``"arpeggio"``（琶音）。由 ``is_strum`` / ``is_fingerpicking`` / ``is_arpeggio``
+        派生。musicnn 的段落技法基线据此罚分。
     time_signature
         该模板的拍号 ``(分子, 分母)``，如 ``(4,4)`` / ``(3,4)`` / ``(6,8)``。分母决定
         :attr:`ticks_per_beat`（``/4``→4、``/8``→3）。默认 ``(4,4)`` 向后兼容现有 4/4
@@ -255,7 +267,7 @@ class StrumPattern:
     ideal_beats: tuple[int, ...]
     sections: tuple[str, ...]
     style: str
-    technique: Literal["strum", "arpeggio"] = "strum"
+    technique: Technique = "strum"
     positions: tuple[Position, ...] = ()
     """适用位置标签，:data:`Position` 的子集。空（默认）= 位置中立，所有位置都不罚分；
     非空时仅在这些位置 0 罚分、其他位置罚 ``W_POSITION``。只有需要特殊位置处理的模板
@@ -285,11 +297,11 @@ class StrumPattern:
                 f"min_beats ({self.min_beats}) 不应小于 motif_beats "
                 f"({self.motif_beats})--动机自身就跨这么多拍"
             )
-        # 技法与栅格内容一致性：arpeggio 模板至少含一个 Pluck，strum 模板不得含 Pluck。
+        # 技法与栅格内容一致性：分解/琶音模板至少含一个 Pluck，strum 模板不得含 Pluck。
         has_pluck = any(isinstance(c, Pluck) for c in self.grid_motif)
-        if self.technique == "arpeggio" and not has_pluck:
+        if self.technique in ("fingerpicking", "arpeggio") and not has_pluck:
             raise ValueError(
-                f"分解模板 {self.name} 的 grid_motif 必须含至少一个 Pluck"
+                f"分解/琶音模板 {self.name} 的 grid_motif 必须含至少一个 Pluck"
             )
         if self.technique == "strum" and has_pluck:
             raise ValueError(
@@ -311,8 +323,13 @@ class StrumPattern:
         return self.technique == "strum"
 
     @property
+    def is_fingerpicking(self) -> bool:
+        """是否分解和弦模板（逐弦拨音）。"""
+        return self.technique == "fingerpicking"
+
+    @property
     def is_arpeggio(self) -> bool:
-        """是否分解模板。"""
+        """是否琶音模板（快速依次拨出和弦内音，渲染波浪箭头）。"""
         return self.technique == "arpeggio"
 
     def grid_for(self, beats: int) -> RhythmGrid:
@@ -355,6 +372,66 @@ class StrumPattern:
         total = sum(c.duration for c in self.grid_motif)
         n = sum(1 for c in self.grid_motif if not isinstance(c, Rest))
         return n / total if total else 0.0
+
+    def instantiated_density(self, beats: int) -> float:
+        """按 ``beats`` 拍平铺/截断后的**实际**密度。
+
+        :meth:`density` 算的是动机本身的密度，隐含「平铺后密度不变」的假设——
+        但 ``grid_for`` 非整数倍平铺时末尾取动机前缀截断，截断前缀的密度与
+        动机密度可能不同（如动机以长休止收尾时，截断恰好切掉休止 -> 实际更密；
+        动机以发音动作开头时截断 -> 实际密度接近动机头部密度）。选型打分
+        （:func:`rhythm_pattern.strum_patterns.pattern_cost`）用此值对齐真实输出，
+        避免「按动机密度排序、按截断栅格演奏」的评分/实例化脱节。
+
+        与 :meth:`density` 同样直接按 tick 累算，不构造 :class:`RhythmGrid`。
+        """
+        if beats < 1:
+            raise ValueError(f"拍数必须为正整数，实际 {beats}")
+        tpb = self.ticks_per_beat
+        need = tpb * beats
+        motif = self.grid_motif
+        motif_total = sum(c.duration for c in motif)
+        full_copies = need // motif_total
+        remainder = need % motif_total
+        # 完整动机份数的发音数与时值
+        n_full = sum(1 for c in motif if not isinstance(c, Rest)) * full_copies
+        t_full = motif_total * full_copies
+        if remainder > 0:
+            # 前缀截断部分的发音数与时值（与 _truncate_to_duration 同规则）
+            acc = 0
+            n_rem = 0
+            for c in motif:
+                if acc + c.duration <= remainder:
+                    if not isinstance(c, Rest):
+                        n_rem += 1
+                    acc += c.duration
+                else:
+                    remaining = remainder - acc
+                    if remaining > 0 and not isinstance(c, Rest):
+                        # 跨截断点的发音动作被保留（duration 缩短），仍算一次发音
+                        n_rem += 1
+                    break
+                if acc == remainder:
+                    break
+            n_full += n_rem
+            t_full += remainder
+        return n_full / t_full if t_full else 0.0
+
+    def truncation_ratio(self, beats: int) -> float:
+        """``grid_for(beats)`` 尾部截断部分占动机时值的比例，``0..1``。
+
+        ``beats`` 是 ``motif_beats`` 整数倍时为 0（干净平铺）；否则返回
+        ``(need % motif_total) / motif_total``——比例越高说明尾部「发明节奏」
+        （截断出的前缀不等于任何完整动机周期）越多。选型打分用它惩罚
+        不干净的非整动机收尾：整动机对齐的模板优先，截断丑陋的靠后。
+        """
+        if beats < 1:
+            raise ValueError(f"拍数必须为正整数，实际 {beats}")
+        motif_total = sum(c.duration for c in self.grid_motif)
+        if motif_total == 0:
+            return 0.0
+        return (self.ticks_per_beat * beats % motif_total) / motif_total
+
 
 
 def _with_duration(cell: Cell, duration: int) -> Cell:
@@ -426,7 +503,7 @@ class RhythmEvent:
               "chord": "C",            # 和弦符号
               "beats": 4,              # 占拍数
               "pattern": "folk D-DU",  # 节奏型模板名（人类可读）
-              "technique": "strum",    # 技法大类 "strum" / "arpeggio"
+              "technique": "strum",    # 技法大类 "strum"/"fingerpicking"/"arpeggio"
               "fingering": [          # 指法动作序列（同 self.fingering，逐项 to_dict）
                 {"kind": "stroke_down", "strings": null},
                 {"kind": "rest", "strings": null},

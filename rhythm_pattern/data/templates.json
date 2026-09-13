@@ -85,25 +85,13 @@
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 1,
+        "duration": 2,
         "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "U",
-        "duration": 1,
-        "accent": "default"
-      },
-      {
-        "type": "stroke",
-        "direction": "D",
-        "duration": 1,
-        "accent": "default"
-      },
-      {
-        "type": "stroke",
-        "direction": "U",
-        "duration": 1,
+        "duration": 2,
         "accent": "default"
       }
     ],
@@ -378,7 +366,7 @@
       "bridge"
     ],
     "style": "folk",
-    "technique": "arpeggio",
+    "technique": "fingerpicking",
     "positions": [],
     "time_signature": [
       4,
@@ -480,7 +468,7 @@
       "bridge"
     ],
     "style": "folk",
-    "technique": "arpeggio",
+    "technique": "fingerpicking",
     "positions": [],
     "time_signature": [
       4,
@@ -579,7 +567,7 @@
       "bridge"
     ],
     "style": "folk",
-    "technique": "arpeggio",
+    "technique": "fingerpicking",
     "positions": [],
     "time_signature": [
       4,
@@ -628,7 +616,7 @@
       "prechorus"
     ],
     "style": "folk",
-    "technique": "arpeggio",
+    "technique": "fingerpicking",
     "positions": [],
     "time_signature": [
       4,
@@ -663,7 +651,7 @@
       "bridge"
     ],
     "style": "folk",
-    "technique": "arpeggio",
+    "technique": "fingerpicking",
     "positions": [],
     "time_signature": [
       4,
@@ -728,7 +716,7 @@
       "outro"
     ],
     "style": "folk",
-    "technique": "arpeggio",
+    "technique": "fingerpicking",
     "positions": [
       "tail"
     ],
@@ -787,6 +775,47 @@
     "motif_beats": 2,
     "min_beats": 2,
     "ideal_beats": [
+      2,
+      4
+    ],
+    "sections": [
+      "verse",
+      "bridge",
+      "outro"
+    ],
+    "style": "folk",
+    "technique": "fingerpicking",
+    "positions": [
+      "tail"
+    ],
+    "time_signature": [
+      4,
+      4
+    ],
+    "tags": [
+      "guitar",
+      "slow",
+      "soft",
+      "classical"
+    ]
+  },
+  {
+    "id": "arpeggio roll (tail)",
+    "name": "arpeggio roll (tail)",
+    "grid_motif": [
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "all"
+        },
+        "duration": 4,
+        "accent": "strong"
+      }
+    ],
+    "motif_beats": 1,
+    "min_beats": 1,
+    "ideal_beats": [
+      1,
       2,
       4
     ],
@@ -992,7 +1021,7 @@
       "bridge"
     ],
     "style": "folk",
-    "technique": "arpeggio",
+    "technique": "fingerpicking",
     "positions": [],
     "time_signature": [
       6,
@@ -1040,6 +1069,47 @@
       "outro"
     ],
     "style": "folk",
+    "technique": "fingerpicking",
+    "positions": [
+      "tail"
+    ],
+    "time_signature": [
+      6,
+      8
+    ],
+    "tags": [
+      "guitar",
+      "slow",
+      "soft",
+      "classical",
+      "new age"
+    ]
+  },
+  {
+    "id": "6/8 arpeggio roll (tail)",
+    "name": "6/8 arpeggio roll (tail)",
+    "grid_motif": [
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "all"
+        },
+        "duration": 3,
+        "accent": "strong"
+      }
+    ],
+    "motif_beats": 1,
+    "min_beats": 1,
+    "ideal_beats": [
+      1,
+      2
+    ],
+    "sections": [
+      "verse",
+      "bridge",
+      "outro"
+    ],
+    "style": "folk",
     "technique": "arpeggio",
     "positions": [
       "tail"
@@ -1047,6 +1117,312 @@
     "time_signature": [
       6,
       8
+    ],
+    "tags": [
+      "guitar",
+      "slow",
+      "soft",
+      "classical"
+    ]
+  },
+  {
+    "id": "3/4 532132 (8分)",
+    "name": "3/4 532132 (8分)",
+    "grid_motif": [
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": null
+        },
+        "duration": 2,
+        "accent": "strong"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": null
+        },
+        "duration": 2,
+        "accent": "default"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": "treble"
+        },
+        "duration": 2,
+        "accent": "weak"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "third",
+          "region": "treble"
+        },
+        "duration": 2,
+        "accent": "default"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": null
+        },
+        "duration": 2,
+        "accent": "weak"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": "treble"
+        },
+        "duration": 2,
+        "accent": "default"
+      }
+    ],
+    "motif_beats": 3,
+    "min_beats": 3,
+    "ideal_beats": [
+      3
+    ],
+    "sections": [
+      "verse",
+      "prechorus",
+      "bridge"
+    ],
+    "style": "folk",
+    "technique": "fingerpicking",
+    "positions": [],
+    "time_signature": [
+      3,
+      4
+    ],
+    "tags": [
+      "guitar",
+      "slow",
+      "classical",
+      "waltz"
+    ]
+  },
+  {
+    "id": "6/8 532132 (8分)",
+    "name": "6/8 532132 (8分)",
+    "grid_motif": [
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": null
+        },
+        "duration": 1,
+        "accent": "strong"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": null
+        },
+        "duration": 1,
+        "accent": "default"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": "treble"
+        },
+        "duration": 1,
+        "accent": "default"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "third",
+          "region": "treble"
+        },
+        "duration": 1,
+        "accent": "weak"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": null
+        },
+        "duration": 1,
+        "accent": "default"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": "treble"
+        },
+        "duration": 1,
+        "accent": "default"
+      }
+    ],
+    "motif_beats": 2,
+    "min_beats": 2,
+    "ideal_beats": [
+      2
+    ],
+    "sections": [
+      "verse",
+      "prechorus",
+      "bridge"
+    ],
+    "style": "folk",
+    "technique": "fingerpicking",
+    "positions": [],
+    "time_signature": [
+      6,
+      8
+    ],
+    "tags": [
+      "guitar",
+      "slow",
+      "classical"
+    ]
+  },
+  {
+    "id": "3/4 waltz D-D-DU",
+    "name": "3/4 waltz D-D-DU",
+    "grid_motif": [
+      {
+        "type": "stroke",
+        "direction": "D",
+        "duration": 4,
+        "accent": "strong"
+      },
+      {
+        "type": "stroke",
+        "direction": "D",
+        "duration": 4,
+        "accent": "weak"
+      },
+      {
+        "type": "stroke",
+        "direction": "D",
+        "duration": 2,
+        "accent": "default"
+      },
+      {
+        "type": "stroke",
+        "direction": "U",
+        "duration": 2,
+        "accent": "weak"
+      }
+    ],
+    "motif_beats": 3,
+    "min_beats": 3,
+    "ideal_beats": [
+      3
+    ],
+    "sections": [
+      "chorus",
+      "verse"
+    ],
+    "style": "folk",
+    "technique": "strum",
+    "positions": [],
+    "time_signature": [
+      3,
+      4
+    ],
+    "tags": [
+      "guitar",
+      "country",
+      "waltz",
+      "soft"
+    ]
+  },
+  {
+    "id": "3/4 boom-chick",
+    "name": "3/4 boom-chick",
+    "grid_motif": [
+      {
+        "type": "stroke",
+        "direction": "D",
+        "duration": 4,
+        "accent": "strong"
+      }
+    ],
+    "motif_beats": 1,
+    "min_beats": 1,
+    "ideal_beats": [
+      3
+    ],
+    "sections": [
+      "chorus",
+      "bridge",
+      "outro"
+    ],
+    "style": "folk",
+    "technique": "strum",
+    "positions": [],
+    "time_signature": [
+      3,
+      4
+    ],
+    "tags": []
+  },
+  {
+    "id": "3/4 arpeggio cadence (tail)",
+    "name": "3/4 arpeggio cadence (tail)",
+    "grid_motif": [
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "root",
+          "region": null
+        },
+        "duration": 4,
+        "accent": "strong"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "third",
+          "region": null
+        },
+        "duration": 4,
+        "accent": "default"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "topn",
+          "n": 2,
+          "span": "comfortable"
+        },
+        "duration": 4,
+        "accent": "weak"
+      }
+    ],
+    "motif_beats": 3,
+    "min_beats": 3,
+    "ideal_beats": [
+      3
+    ],
+    "sections": [
+      "verse",
+      "bridge",
+      "outro"
+    ],
+    "style": "folk",
+    "technique": "fingerpicking",
+    "positions": [
+      "tail"
+    ],
+    "time_signature": [
+      3,
+      4
     ],
     "tags": [
       "guitar",

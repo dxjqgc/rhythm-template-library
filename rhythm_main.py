@@ -128,7 +128,10 @@ def check_technique_baseline(gtr) -> None:
 
     同一段主歌民谣进行：
 
-    - ``technique_baseline="arpeggio"`` -> 把所有和弦切到分解模板；
+    - ``technique_baseline="fingerpicking"`` -> 把和弦切到分解模板（middle 位不选
+      真琶音——真琶音吃 ``W_TECHNIQUE_SOFT`` 轻罚，tail 位仍可凭位置奖励收束）；
+    - ``technique_baseline="arpeggio"`` -> 把所有和弦切到分解/琶音模板（宽匹配，
+      分解与真琶音都不罚，仅扫弦罚）；
     - ``"strum"`` -> 把所有和弦压成扫弦模板；
     - ``"mixed"`` / ``None`` -> 不干预，选型器自由选（可能扫拆混排，如 4 拍 C 选
       分解、2 拍 G/Am 选扫弦）。
@@ -145,11 +148,23 @@ def check_technique_baseline(gtr) -> None:
         )
         return [e.pattern.name for e in ev]
 
-    # arpeggio 基线：整段切分解。
+    # fingerpicking 基线：middle 位和弦不选真琶音（technique="arpeggio"）模板——
+    # 真琶音是收束手势（都标 positions=("tail",)），轻罚 W_TECHNIQUE_SOFT=2.0 在
+    # middle 位无 tail 奖励对冲时足以让位给分解模板。
+    fp_events = enumerate_rhythm_patterns(
+        prog, gtr, section="verse", style="folk", technique_baseline="fingerpicking"
+    )
+    fp_middle = fp_events[1].pattern
+    assert fp_middle.technique == "fingerpicking", (
+        f"fingerpicking 基线 middle 位应选分解，实际 {fp_middle.name}"
+        f" (technique={fp_middle.technique})"
+    )
+
+    # arpeggio 基线（宽匹配）：分解 + 真琶音模板都合法。
     arp_names = _names("arpeggio")
-    arp_patterns = {p.name for p in STRUM_PATTERNS if p.is_arpeggio}
+    arp_patterns = {p.name for p in STRUM_PATTERNS if not p.is_strum}
     assert all(n in arp_patterns for n in arp_names), (
-        f"arpeggio 基线应整段选分解模板，实际 {arp_names}"
+        f"arpeggio 基线应整段选分解/琶音模板，实际 {arp_names}"
     )
 
     # strum 基线：整段压成扫弦。
@@ -164,9 +179,10 @@ def check_technique_baseline(gtr) -> None:
         names = _names(base)
         print(f"  baseline={base!s:7s} -> {names}  (不干预，自由选型)")
 
+    print(f"  baseline=fingerpicking -> {[e.pattern.name for e in fp_events]}")
     print(f"  baseline=arpeggio -> {arp_names}")
     print(f"  baseline=strum    -> {strum_names}")
-    print("  断言通过: arpeggio 切分解；strum 压扫弦；mixed/None 不干预自由选型")
+    print("  断言通过: fingerpicking 分解优先(真琶音轻罚)；arpeggio 宽匹配切分解；strum 压扫弦；mixed/None 不干预自由选型")
 
 
 def check_string_roles(gtr) -> None:
@@ -215,9 +231,9 @@ def check_string_roles(gtr) -> None:
 
 
 def check_selection_context(gtr) -> None:
-    """SelectionContext 抽象层：拍号、BPM 维度介入 + 缺省降级。
+    """SelectionContext 抽象层：拍号、BPM、起音密度维度介入 + 缺省降级。
 
-    验证三件事：
+    验证四件事：
 
     1. **拍号契合**：``ctx.time_signature=(6,8)`` 下，4/4 模板吃 ``W_TIME_SIG_MISMATCH``
        重罚（量级 50），让位 6/8 专属模板（``time_signature==(6,8)`` 不罚）。6/8 是拍号
@@ -227,6 +243,8 @@ def check_selection_context(gtr) -> None:
        的过密分解模板吃 ``W_BPM_HIGH`` 罚分，让位低密度模板。
     3. **缺省降级**：``SelectionContext()`` 全空字段时，输出与旧式调用
        ``enumerate_rhythm_patterns(progression, gtr)`` 完全一致（拍号/BPM 不介入）。
+    4. **实测起音密度融合**：``ctx.onset_density`` 给定时与段落静态目标密度加权融合
+       （实测疏 -> 选更疏模板，实测密 -> 选更密模板）；``None`` 时完全不介入。
     """
     print("\n=== SelectionContext 抽象层 ===")
     from rhythm_pattern import SelectionContext
@@ -293,7 +311,50 @@ def check_selection_context(gtr) -> None:
         f"SelectionContext() 全空应与旧式默认调用等价，实际\n  旧式={old_names}\n  ctx ={ctx_names}"
     )
 
-    print("  断言通过: 拍号/BPM 介入生效；缺省降级与旧式调用等价")
+    # ── 4. 实测起音密度融合：onset_density 拉动目标密度 ──
+    # verse/folk 下实测极疏(0.1)应选出比默认更疏的模板，实测极密(1.0)应更密。
+    # 用 3 和弦 middle 位避开单和弦 tail 奖励干扰（同 pytest TestOnsetDensity）。
+    from rhythm_pattern.strum_patterns import _target_density, W_ONSET_AUDIO
+
+    mid = lambda ev: ev[1].pattern  # noqa: E731  第 2 个和弦 = middle 位
+    e_default = enumerate_rhythm_patterns(
+        prog_decay, gtr, ctx=SelectionContext(section="verse", style="folk"),
+    )
+    e_sparse = enumerate_rhythm_patterns(
+        prog_decay, gtr,
+        ctx=SelectionContext(section="verse", style="folk", onset_density=0.1),
+    )
+    e_dense = enumerate_rhythm_patterns(
+        prog_decay, gtr,
+        ctx=SelectionContext(section="verse", style="folk", onset_density=1.0),
+    )
+    print(f"  verse默认(无实测)  -> {[e.pattern.name for e in e_default]}")
+    print(f"  verse实测疏(0.1)  -> {[e.pattern.name for e in e_sparse]}")
+    print(f"  verse实测密(1.0)  -> {[e.pattern.name for e in e_dense]}")
+    assert mid(e_sparse).density() < mid(e_default).density(), (
+        f"实测疏(0.1)应选出更疏模板: {mid(e_sparse).name}({mid(e_sparse).density()}) "
+        f"vs 默认 {mid(e_default).name}({mid(e_default).density()})"
+    )
+    assert mid(e_dense).density() > mid(e_default).density(), (
+        f"实测密(1.0)应选出更密模板: {mid(e_dense).name}({mid(e_dense).density()}) "
+        f"vs 默认 {mid(e_default).name}({mid(e_default).density()})"
+    )
+    # 融合公式本身：fused = W*measured + (1-W)*static（verse 4 拍满小节 static=0.30）。
+    static = _target_density("verse", 4, (4, 4))
+    fused = _target_density("verse", 4, (4, 4), 0.5)
+    assert abs(fused - (W_ONSET_AUDIO * 0.5 + (1 - W_ONSET_AUDIO) * static)) < 1e-9, (
+        f"融合公式不符: fused={fused}, 期望 {W_ONSET_AUDIO}*0.5+{1-W_ONSET_AUDIO}*{static}"
+    )
+    # 缺省不介入：onset_density=None 与不传字段完全等价。
+    e_none = enumerate_rhythm_patterns(
+        prog_decay, gtr,
+        ctx=SelectionContext(section="verse", style="folk", onset_density=None),
+    )
+    assert [e.pattern.name for e in e_none] == [e.pattern.name for e in e_default], (
+        "onset_density=None 应与缺省完全等价"
+    )
+
+    print("  断言通过: 拍号/BPM/起音密度介入生效；缺省降级与旧式调用等价")
 
 
 def check_arrange_progression(gtr) -> None:
@@ -324,8 +385,8 @@ def check_arrange_progression(gtr) -> None:
     tail_name = events[-1].pattern.name
     middle_name = events[1].pattern.name
     print(f"  4-2-2 verse folk: head={events[0].pattern.name} middle={middle_name} tail={tail_name}")
-    # 尾和弦应选分解/收束类（arpeggio），不该选扫弦--尾收束偏分解。
-    assert events[-1].pattern.is_arpeggio, (
+    # 尾和弦应选分解/收束类（非扫弦），不该选扫弦--尾收束偏分解。
+    assert not events[-1].pattern.is_strum, (
         f"尾和弦(tail)应倾向分解/收束型，实际选了扫弦 {tail_name}"
     )
     # 中段和弦不应选标了 positions=("tail",) 的琶音收尾模板（非 tail 位置吃 W_POSITION）。
@@ -431,6 +492,87 @@ def check_68(gtr) -> None:
     print("  断言通过: 6/8 拍号筛专属模板，栅格按附点拍对齐，重音标注强弱")
 
 
+def check_34(gtr) -> None:
+    """3/4 拍号：专属模板优先、栅格按 4 tick/拍对齐、同分母轻罚兜底、孪生模板成对。
+
+    验证五件事：
+
+    1. **拍号契合**：``ctx.time_signature=(3,4)`` 下选出的模板 ``time_signature==(3,4)``，
+       /8 模板吃 ``W_TIME_SIG_MISMATCH`` 重罚不入选。
+    2. **栅格对齐**：3/4 一拍 = 4 tick（与其他 /4 拍号一致），栅格总时值 = ``4 * beats``。
+    3. **整段编排**：3/4 歌曲的编排只在 3/4 模板里选（主体 532132 + 尾和弦收束）。
+    4. **同分母兜底**：4/4 短模板（boom-chick）在 3/4 下吃 ``W_TIME_SIG_NUMERATOR``
+       轻罚仍可用（极端兜底场景不崩），但 3/4 专属 boom-chick 0 罚分优先。
+    5. **孪生成对**：532132 指法在 3/4 与 6/8 各有一份编码，弦角色实例化到 C 均为
+       5-3-2-1-3-2 弦序（0=六弦下标：1,3,4,5,3,4）。
+    """
+    print("\n=== 3/4 拍号 ===")
+    # 1+2. 拍号契合 + 栅格对齐：3/4 各段落 3 拍（1 小节）选 3/4 模板，总时值 = 4*beats。
+    for prog, section, style, baseline in [
+        ([("C", 3)], "chorus", "folk", None),
+        ([("C", 3), ("G", 3)], "verse", "folk", "fingerpicking"),
+    ]:
+        ctx = SelectionContext(
+            section=section, style=style, time_signature=(3, 4),
+            technique_baseline=baseline,
+        )
+        events = enumerate_rhythm_patterns(prog, gtr, ctx=ctx)
+        for e in events:
+            assert e.pattern.time_signature == (3, 4), (
+                f"3/4 歌曲应选 3/4 模板，实际选了 {e.pattern.name} (ts={e.pattern.time_signature})"
+            )
+            total = sum(c.duration for c in e.grid.cells)
+            assert total == 4 * e.beats, (
+                f"3/4 栅格总时值应=4*beats={4 * e.beats}，实际 {total}（{e.pattern.name}）"
+            )
+            assert e.grid.ticks_per_beat == 4, (
+                f"3/4 栅格 ticks_per_beat 应=4，实际 {e.grid.ticks_per_beat}"
+            )
+        print(f"  {section}/{style} {prog} -> {[e.pattern.name for e in events]} (全 3/4, 总时值 4*beats)")
+
+    # 3. 整段编排：主体 3/4 模板 + 尾和弦收束，不混入 4/4。
+    ctx = SelectionContext(
+        section="verse", style="folk", time_signature=(3, 4),
+        technique_baseline="fingerpicking",
+    )
+    arranged = arrange_progression([("C", 3), ("G", 3), ("Am", 3), ("F", 3)], gtr, ctx=ctx)
+    assert all(e.pattern.time_signature == (3, 4) for e in arranged), (
+        "3/4 编排不应混入 4/4 模板，实际 "
+        + str([e.pattern.time_signature for e in arranged])
+    )
+    print(f"  编排 4 和弦 -> {[e.pattern.name for e in arranged]} (全 3/4, 尾和弦收束)")
+
+    # 4. 同分母兜底：4/4 boom-chick 在 (3,4) ctx 下吃轻罚仍可用，专属 3/4 boom-chick 更优。
+    from rhythm_pattern.strum_patterns import _boom_chick_fallback
+
+    fb34 = _boom_chick_fallback((3, 4))
+    assert fb34.name == "3/4 boom-chick" and fb34.time_signature == (3, 4), (
+        f"3/4 兜底应取 3/4 boom-chick，实际 {fb34.name} (ts={fb34.time_signature})"
+    )
+    print(f"  3/4 兜底 -> {fb34.name} (同拍号优先，无跨分子轻罚)")
+
+    # 5. 孪生成对：532132 两拍号各一份，实例化到 C 弦序一致（5-3-2-1-3-2）。
+    from rhythm_pattern.strum_patterns import instantiate_pattern
+
+    for name, beats in (("3/4 532132 (8分)", 3), ("6/8 532132 (8分)", 2)):
+        p = next(p for p in STRUM_PATTERNS if p.name == name)
+        ev = instantiate_pattern(p, "C", gtr, beats)
+        seq = [c.strings[0] for c in ev.grid.cells if getattr(c, "strings", None)]
+        assert seq == [1, 3, 4, 5, 3, 4], (
+            f"{name} 实例化到 C 应为 5-3-2-1-3-2（下标 {[1, 3, 4, 5, 3, 4]}），实际 {seq}"
+        )
+    print("  532132 孪生模板 (3/4 + 6/8) 实例化到 C 均为 5-3-2-1-3-2 弦序")
+
+    # 3/4 专属模板重音存在（强-弱-弱拍头标记）。
+    p34 = [p for p in STRUM_PATTERNS if p.time_signature == (3, 4)]
+    assert p34, "硬编码库应有 3/4 专属模板"
+    for p in p34:
+        has_strong = any(getattr(c, "accent", None) == "strong" for c in p.grid_motif)
+        assert has_strong, f"3/4 模板 {p.name} 应至少含一个 strong accent"
+    print(f"  {len(p34)} 个 3/4 模板均含 strong accent: {[p.name for p in p34]}")
+    print("  断言通过: 3/4 拍号筛专属模板，同分母轻罚兜底，孪生指法跨拍号成对")
+
+
 def main() -> None:
     gtr = Fretboard.guitar()
 
@@ -443,6 +585,7 @@ def main() -> None:
     check_selection_context(gtr)
     check_arrange_progression(gtr)
     check_68(gtr)
+    check_34(gtr)
 
     # 展示几段典型进行选出的节奏栅格（不参与断言）。
     _show([("C", 4), ("G", 4), ("Am", 4), ("F", 4)], "chorus", "pop", gtr)

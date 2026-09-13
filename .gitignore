@@ -60,3 +60,6 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Claude Flow working state
+.claude-flow/

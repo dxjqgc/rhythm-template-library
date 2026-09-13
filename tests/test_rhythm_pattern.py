@@ -182,10 +182,10 @@ class TestTemplateLibrary:
             assert p.min_beats >= p.motif_beats
             assert len(p.sections) > 0
             assert p.style in {"folk", "pop", "rock"}
-            assert p.technique in {"strum", "arpeggio"}
-            # technique 与栅格内容一致：arpeggio 含 Pluck，strum 不含。
+            assert p.technique in {"strum", "fingerpicking", "arpeggio"}
+            # technique 与栅格内容一致：fingerpicking/arpeggio 含 Pluck，strum 不含。
             has_pluck = any(isinstance(c, Pluck) for c in p.grid_motif)
-            assert has_pluck == p.is_arpeggio, (
+            assert has_pluck == (not p.is_strum), (
                 f"{p.name}: technique={p.technique} 与栅格内容(含Pluck={has_pluck})不一致"
             )
 
@@ -267,10 +267,10 @@ class TestTechniqueBaseline:
         return [e.pattern.name for e in ev]
 
     def test_arpeggio_baseline_picks_arpeggio(self, guitar):
-        """arpeggio 基线把和弦压向分解模板。"""
-        arp = {p.name for p in STRUM_PATTERNS if p.is_arpeggio}
+        """arpeggio 基线（宽匹配）把和弦压向分解/琶音模板。"""
+        arp = {p.name for p in STRUM_PATTERNS if not p.is_strum}
         for n in self._names(guitar, "arpeggio"):
-            assert n in arp, f"arpeggio 基线应选分解，实际含 {n}"
+            assert n in arp, f"arpeggio 基线应选分解/琶音，实际含 {n}"
 
     def test_strum_baseline_picks_strum(self, guitar):
         """strum 基线把和弦压向扫弦模板。"""
@@ -284,6 +284,129 @@ class TestTechniqueBaseline:
         for base in ("mixed", None):
             names = self._names(guitar, base)
             assert len(names) == 3, f"{base} 基线应返回 3 个事件"
+
+    def test_fingerpicking_baseline_penalizes_true_arpeggio(self, guitar):
+        """fingerpicking 基线区分分解与真琶音：middle 位不选真琶音模板。
+
+        真琶音（technique="arpeggio"，如 arpeggio roll）在 fingerpicking 基线下吃
+        W_TECHNIQUE_SOFT 轻罚（分解是段落主体、真琶音是收束手势）。middle 位无 tail
+        奖励对冲，且库里有足量分解模板可替代，故 middle 位应选分解（fingerpicking）
+        模板。真琶音模板标 positions=("tail",)，tail 位仍可凭位置奖励胜出——轻罚不压死。
+        """
+        from rhythm_pattern.strum_patterns import pattern_cost, SelectionContext
+        true_arp = next(
+            p for p in STRUM_PATTERNS if p.technique == "arpeggio"
+            and p.time_signature == (4, 4)
+        )
+        fp_ctx = SelectionContext(
+            section="verse", style="folk", technique_baseline="fingerpicking",
+        )
+        arp_ctx = SelectionContext(
+            section="verse", style="folk", technique_baseline="arpeggio",
+        )
+        common = dict(beats=1, muted=(0, 0, 0), density_neighbor_delta=None)
+        cost_fp = pattern_cost(true_arp, **common, ctx=fp_ctx)
+        cost_arp = pattern_cost(true_arp, **common, ctx=arp_ctx)
+        # fingerpicking 基线给真琶音轻罚，arpeggio 基线（宽匹配）不罚。
+        assert cost_fp - cost_arp == 2.0, (
+            f"fingerpicking 基线应给真琶音 W_TECHNIQUE_SOFT=2.0 罚分，"
+            f"实际差 {cost_fp - cost_arp}"
+        )
+        # 端到端：middle 位和弦（3 和弦进行的第 2 个）不选真琶音模板。
+        ev = enumerate_rhythm_patterns(
+            [("C", 4), ("G", 2), ("Am", 2)], guitar,
+            section="verse", style="folk", technique_baseline="fingerpicking",
+        )
+        assert ev[1].pattern.technique == "fingerpicking", (
+            f"fingerpicking 基线 middle 位应选分解，实际 {ev[1].pattern.name}"
+        )
+
+    def test_arpeggio_baseline_wide_match_kept(self, guitar):
+        """arpeggio 基线宽匹配不回退：分解模板与真琶音模板都 0 罚（扫弦仍罚）。"""
+        from rhythm_pattern.strum_patterns import pattern_cost, SelectionContext
+        arp_ctx = SelectionContext(
+            section="verse", style="folk", technique_baseline="arpeggio",
+        )
+        none_ctx = SelectionContext(
+            section="verse", style="folk", technique_baseline=None,
+        )
+        common = dict(beats=1, muted=(0, 0, 0), density_neighbor_delta=None)
+        for p in STRUM_PATTERNS:
+            if p.time_signature != (4, 4) or p.is_strum:
+                continue  # 宽匹配只覆盖拨弦类；扫弦在 arpeggio 基线下仍罚 W_TECHNIQUE
+            c_arp = pattern_cost(p, **common, ctx=arp_ctx)
+            c_none = pattern_cost(p, **common, ctx=none_ctx)
+            assert c_arp == c_none, (
+                f"arpeggio 宽匹配：{p.name} 在 arpeggio 基线与 None 基线下对拨弦类"
+                f"模板罚分应相同（{c_arp} vs {c_none}）"
+            )
+
+
+class TestOnsetDensity:
+    """实测起音密度融合测试：SelectionContext.onset_density 拉动目标密度。"""
+
+    def _select(self, gtr, **ctx_kwargs):
+        from rhythm_pattern import SelectionContext
+        # 3 和弦 middle 位（避开单和弦 tail 奖励对选型的干扰），只看第 2 个。
+        ev = enumerate_rhythm_patterns(
+            [("C", 4), ("G", 2), ("Am", 2)], gtr,
+            ctx=SelectionContext(**ctx_kwargs),
+        )
+        return ev[1].pattern
+
+    def test_sparse_audio_pulls_sparser_pattern(self, guitar):
+        """verse 段落实测极疏（0.1）时，目标密度被拉低，选出比默认更疏的模板。
+
+        默认 verse/folk 2 拍选 folk D-DU（密度 0.375）；实测 0.1 融合后目标
+        0.6*0.1+0.4*0.3=0.18，boom-chick 类低密模板应胜出。
+        """
+        default = self._select(guitar, section="verse", style="folk")
+        sparse = self._select(
+            guitar, section="verse", style="folk", onset_density=0.1,
+        )
+        assert sparse.density() < default.density(), (
+            f"实测疏(onset=0.1)应选出更疏模板: {sparse.name}({sparse.density()}) "
+            f"vs 默认 {default.name}({default.density()})"
+        )
+
+    def test_dense_audio_pulls_denser_pattern(self, guitar):
+        """verse 段落实测极密（1.0）时，目标密度被拉高，选出比默认更密的模板。"""
+        default = self._select(guitar, section="verse", style="folk")
+        dense = self._select(
+            guitar, section="verse", style="folk", onset_density=1.0,
+        )
+        assert dense.density() > default.density(), (
+            f"实测密(onset=1.0)应选出更密模板: {dense.name}({dense.density()}) "
+            f"vs 默认 {default.name}({default.density()})"
+        )
+
+    def test_none_keeps_legacy_behavior(self, guitar):
+        """onset_density=None 完全退回静态表，与旧调用等价。"""
+        from rhythm_pattern import SelectionContext
+        legacy = enumerate_rhythm_patterns(
+            [("C", 4), ("G", 2), ("Am", 2)], guitar,
+            section="verse", style="folk",
+        )
+        ctx_none = enumerate_rhythm_patterns(
+            [("C", 4), ("G", 2), ("Am", 2)], guitar,
+            ctx=SelectionContext(
+                section="verse", style="folk", onset_density=None,
+            ),
+        )
+        assert [e.pattern.name for e in legacy] == [e.pattern.name for e in ctx_none]
+
+    def test_out_of_range_is_clamped(self, guitar):
+        """越界实测值被 clamp 到 [0,1]，不爆炸。"""
+        from rhythm_pattern.strum_patterns import _target_density
+        assert _target_density("verse", 4, (4, 4), 5.0) == _target_density("verse", 4, (4, 4), 1.0)
+        assert _target_density("verse", 4, (4, 4), -3.0) == _target_density("verse", 4, (4, 4), 0.0)
+
+    def test_fusion_weight(self, guitar):
+        """融合公式：W_ONSET_AUDIO*measured + (1-W)*static。"""
+        from rhythm_pattern.strum_patterns import W_ONSET_AUDIO, _target_density
+        static = _target_density("verse", 4, (4, 4))
+        fused = _target_density("verse", 4, (4, 4), 0.5)
+        assert abs(fused - (W_ONSET_AUDIO * 0.5 + (1 - W_ONSET_AUDIO) * static)) < 1e-9
 
 
 class TestStringRoles:

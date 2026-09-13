@@ -22,7 +22,8 @@
 2. **段落契合**：当前段落不在 ``pattern.sections`` 里则额外罚分。
 3. **风格匹配**：模板风格 != 请求风格时固定罚分（不剔除，允许跨风格借用降级）。
 4. **技法基线**（段落级）：musicnn 给出的「该段落该扫还是该拆」倾向。基线为
-   ``"arpeggio"`` 时扫弦模板罚分、为 ``"strum"`` 时分解模板罚分；``"mixed"`` /
+   ``"fingerpicking"`` / ``"arpeggio"`` 时扫弦模板罚分、为 ``"strum"`` 时分解/
+   琶音模板罚分（``"arpeggio"`` 宽匹配，分解与琶音均不罚）；``"mixed"`` /
    ``None`` 不罚，让密度/段落契合自己选。这是段落级混排的关键维度。
 5. **密度贴合**：模板密度与该段落 + 和弦位置的目标密度之差。
 6. **整动机奖励**：``beats`` 恰等于 ``motif_beats`` 且 ``ideal_beats`` 是单元素
@@ -79,11 +80,13 @@ __all__ = [
 
 
 # 段落技法基线：musicnn 的整段标签经规则引擎推出，逐段落给选型器提供「该扫还是该拆」倾向。
-# - "strum"     倾向全程扫弦（燥/快/摇滚类）；
-# - "arpeggio"  倾向全程分解（柔/慢/抒情类）；
-# - "mixed"     主歌拆副歌扫之类的混排，不在此层罚分，交由密度/段落契合自选；
-# - None        未提供基线（musicnn 未接），选型器退回纯密度行为。
-TechniqueBaseline = Literal["strum", "arpeggio", "mixed"] | None
+# - "strum"         倾向全程扫弦（燥/快/摇滚类）；
+# - "fingerpicking" 倾向全程分解（柔/慢/抒情类），只匹配分解模板；
+# - "arpeggio"      宽匹配：分解与琶音模板都不罚（历史语义——musicnn 的 guitar/slow
+#                   段落标签映射到它，拆分技法后保持该链路行为不变）；
+# - "mixed"         主歌拆副歌扫之类的混排，不在此层罚分，交由密度/段落契合自选；
+# - None            未提供基线（musicnn 未接），选型器退回纯密度行为。
+TechniqueBaseline = Literal["strum", "fingerpicking", "arpeggio", "mixed"] | None
 
 
 @dataclass(frozen=True)
@@ -111,8 +114,12 @@ class SelectionContext:
         ``musicnn_tags`` 时，风格维度改由标签匹配度接管，``style`` 退回 fallback
         （仅在模板无 tags 或 ctx 无 musicnn_tags 时生效）。
     technique_baseline
-        段落技法基线，``"strum" / "arpeggio" / "mixed" / None``。基线明确时技法不符
-        的模板罚分；``mixed`` / ``None``（默认）不罚。段落级混排的关键维度。
+        段落技法基线，``"strum" / "fingerpicking" / "arpeggio" / "mixed" / None``。
+        基线明确时技法不符的模板罚分：扫弦 vs 拨弦类互斥罚 ``W_TECHNIQUE``；
+        ``"fingerpicking"`` 基线额外给真琶音（``technique="arpeggio"``）模板轻罚
+        ``W_TECHNIQUE_SOFT``（分解优先，真琶音仍可凭 tail 奖励收束）；
+        ``"arpeggio"`` 宽匹配：分解与琶音都不罚；``mixed`` / ``None``（默认）不罚。
+        段落级混排的关键维度。
     time_signature
         拍号 ``(分子, 分母)``，如 ``(4, 4)`` / ``(3, 4)`` / ``(6, 8)``。分子非 4 时，
         对 ``motif_beats=4`` 的 4 拍周期模板罚分（3/4 拍下 4 拍动机天然不周期对齐）。
@@ -136,6 +143,13 @@ class SelectionContext:
         ``None``（默认）-> 不介入标签维度，退回 ``style`` 罚分（向后兼容旧调用）。
         这是 musicnn 接入后的主风格维度，比 ``style`` 三值枚举细：musicnn 的
         ``guitar/slow`` 拉向分解模板、``drums/fast/rock`` 拉向扫弦模板。
+    onset_density
+        该段落音频的实测起音密度 ∈ [0, 1]（onsets / (4 × 拍数)，与模板密度同尺度：
+        一次 16 分发音 = 0.25/拍）。给定时不替换、而是与段落静态目标密度**加权融合**
+        （实测权重 ``W_ONSET_AUDIO``，默认 0.6）：音频主导（同一 verse 实际疏密不同），
+        段落性格保留（chorus 仍偏密）。调用方负责归一化（如段落间 min-max），传值应
+        已在静态表值域附近；越界值被 clamp 到 [0, 1]。``None``（默认）-> 完全退回
+        静态表，行为与旧版一致（向后兼容）。
 
     Notes
     -----
@@ -153,6 +167,7 @@ class SelectionContext:
     position: Position | None = None
     max_stretch: int = 4
     musicnn_tags: tuple[tuple[str, float], ...] | None = None
+    onset_density: float | None = None
 
     @property
     def effective_section(self) -> str:
@@ -254,7 +269,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         style="rock",
         tags=("rock", "beat", "fast"),
     ),
-    # ── 分解模板（Pluck 带 StringRole，选型时按 voicing 实例化弦号）─────────
+    # ── 分解模板（Pluck 带 StringRole，选型时按 voicing 实例化弦号；technique="fingerpicking"）──
     StrumPattern(
         name="root-5-top2 (1拍)",
         # 「5,3,21」式 1 拍动机：根音(16分)-五音(16分)-顶两弦同拨(16分)-休(16分)。
@@ -272,7 +287,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(1, 2, 4),
         sections=("verse", "prechorus", "bridge"),
         style="folk",
-        technique="arpeggio",
+        technique="fingerpicking",
         tags=("guitar", "slow", "soft", "classical"),
     ),
     StrumPattern(
@@ -292,7 +307,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(2, 4),
         sections=("verse", "prechorus", "bridge"),
         style="folk",
-        technique="arpeggio",
+        technique="fingerpicking",
         tags=("guitar", "slow", "classical"),
     ),
     StrumPattern(
@@ -311,7 +326,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(4,),
         sections=("verse", "bridge"),
         style="folk",
-        technique="arpeggio",
+        technique="fingerpicking",
         tags=("guitar", "slow", "soft", "classical", "new age"),
     ),
     StrumPattern(
@@ -326,7 +341,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(1, 2, 4),
         sections=("verse", "prechorus"),
         style="folk",
-        technique="arpeggio",
+        technique="fingerpicking",
         tags=("guitar", "slow", "soft"),
     ),
     StrumPattern(
@@ -339,7 +354,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(2, 4),
         sections=("verse", "prechorus", "bridge"),
         style="folk",
-        technique="arpeggio",
+        technique="fingerpicking",
         tags=("guitar", "slow", "soft", "classical", "ambient"),
     ),
     StrumPattern(
@@ -359,7 +374,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(4,),
         sections=("verse", "bridge", "outro"),
         style="folk",
-        technique="arpeggio",
+        technique="fingerpicking",
         positions=("tail",),
         tags=("guitar", "slow", "soft", "classical", "new age", "ambient"),
     ),
@@ -375,6 +390,22 @@ STRUM_PATTERNS: list[StrumPattern] = [
         motif_beats=2,
         min_beats=2,
         ideal_beats=(2, 4),
+        sections=("verse", "bridge", "outro"),
+        style="folk",
+        technique="fingerpicking",
+        positions=("tail",),
+        tags=("guitar", "slow", "soft", "classical"),
+    ),
+    StrumPattern(
+        name="arpeggio roll (tail)",
+        # 真琶音收束：1 拍动机，All() 一次拨全部发音弦、音持续整拍。渲染为波浪箭头
+        # （alphaTab ArpeggioDown/Up），MIDI 里逐弦微错开发声。technique="arpeggio"
+        # 与分解（fingerpicking）区分：分解逐弦拨出完整律动，琶音是「一串音快速依次
+        # 拨出」的单次动作。标 positions=("tail",)——段落尾和弦的典型收束手势。
+        grid_motif=(Pluck(role=All(), duration=4, accent="strong"),),
+        motif_beats=1,
+        min_beats=1,
+        ideal_beats=(1, 2, 4),
         sections=("verse", "bridge", "outro"),
         style="folk",
         technique="arpeggio",
@@ -440,7 +471,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(2, 4),
         sections=("verse", "bridge"),
         style="folk",
-        technique="arpeggio",
+        technique="fingerpicking",
         time_signature=(6, 8),
         tags=("guitar", "slow", "soft", "classical"),
     ),
@@ -459,9 +490,132 @@ STRUM_PATTERNS: list[StrumPattern] = [
         ideal_beats=(2, 4),
         sections=("verse", "bridge", "outro"),
         style="folk",
+        technique="fingerpicking",
+        positions=("tail",),
+        time_signature=(6, 8),
+        tags=("guitar", "slow", "soft", "classical", "new age"),
+    ),
+    StrumPattern(
+        name="6/8 arpeggio roll (tail)",
+        # 6/8 真琶音收束：1 附点拍动机，All() 拨全部发音弦、音持续整附点拍（3 tick）。
+        # 与 4/4 arpeggio roll 同构，technique="arpeggio"（真琶音，渲染波浪箭头），
+        # 标 positions=("tail",) 做段落尾收束手势。
+        grid_motif=(Pluck(role=All(), duration=3, accent="strong"),),
+        motif_beats=1,
+        min_beats=1,
+        ideal_beats=(1, 2),
+        sections=("verse", "bridge", "outro"),
+        style="folk",
         technique="arpeggio",
         positions=("tail",),
         time_signature=(6, 8),
+        tags=("guitar", "slow", "soft", "classical"),
+    ),
+
+    # ── 3/4 拍号模板（8 分音符律动，一小节 3 拍 = 12 tick，强-弱-弱）──────────
+    # time_signature=(3,4)：选型器据此在 3/4 歌曲里优先这些专属模板；4/4 短模板可
+    # 作兜底（同分母吃 W_TIME_SIG_NUMERATOR 轻罚，见打分权重），/8 模板仍被
+    # W_TIME_SIG_MISMATCH 重罚拒掉。与 6/8 的「一哒哒、二哒哒」附点律动区分：
+    # 3/4 是均分三拍「强-弱-弱」，每拍 2 个 8 分。
+    StrumPattern(
+        name="3/4 532132 (8分)",
+        # 3 拍动机（1 小节）分解：5弦根-3弦五-2弦根-1弦三-3弦五-2弦根，六个 8 分
+        # 填满一小节（6×2 tick = 12 tick）。指法 532132 是 4/4 经典 53231323 的
+        # 三拍子近亲——每个「拍点」位置（第 1/3/5 个 8 分）各一次换弦推进，
+        # 强拍落根音。角色随和弦 voicing 实例化，与 53231323 同构。
+        grid_motif=(
+            Pluck(role=Root(), duration=2, accent="strong"),
+            Pluck(role=Fifth(), duration=2),
+            Pluck(role=Root("treble"), duration=2, accent="weak"),
+            Pluck(role=Third("treble"), duration=2),
+            Pluck(role=Fifth(), duration=2, accent="weak"),
+            Pluck(role=Root("treble"), duration=2),
+        ),
+        motif_beats=3,
+        min_beats=3,
+        ideal_beats=(3,),
+        sections=("verse", "prechorus", "bridge"),
+        style="folk",
+        technique="fingerpicking",
+        time_signature=(3, 4),
+        tags=("guitar", "slow", "classical", "waltz"),
+    ),
+    StrumPattern(
+        name="6/8 532132 (8分)",
+        # 上面 3/4 532132 的 6/8 孪生：同指法（六弦序 5-3-2-1-3-2）、同角色序，但
+        # 编码在 6/8 栅格上（一附点拍 3 tick，6 个 8 分 = 2 附点拍 = 1 小节）。
+        # 「强-弱-弱 | 强-弱-弱」两组附点律动 vs 3/4 的均分三拍：同一手指肌肉记忆，
+        # 两种拍号各自编码（模板 time_signature 单值，跨拍号兼容靠孪生对）。
+        # accent 分组：第 1/4 音为两组组头（strong），组内余音弱。
+        grid_motif=(
+            Pluck(role=Root(), duration=1, accent="strong"),
+            Pluck(role=Fifth(), duration=1),
+            Pluck(role=Root("treble"), duration=1),
+            Pluck(role=Third("treble"), duration=1, accent="weak"),
+            Pluck(role=Fifth(), duration=1),
+            Pluck(role=Root("treble"), duration=1),
+        ),
+        motif_beats=2,
+        min_beats=2,
+        ideal_beats=(2,),
+        sections=("verse", "prechorus", "bridge"),
+        style="folk",
+        technique="fingerpicking",
+        time_signature=(6, 8),
+        tags=("guitar", "slow", "classical"),
+    ),
+    StrumPattern(
+        name="3/4 waltz D-D-DU",
+        # 3 拍扫弦圆舞曲：强拍下扫、次强拍下扫、弱拍「下-上」收推动。对应每拍
+        # 2 个 8 分里的 [D·][D·][DU]。
+        grid_motif=(
+            Stroke("D", 4, "strong"),
+            Stroke("D", 4, "weak"),
+            Stroke("D", 2),
+            Stroke("U", 2, "weak"),
+        ),
+        motif_beats=3,
+        min_beats=3,
+        ideal_beats=(3,),
+        sections=("chorus", "verse"),
+        style="folk",
+        time_signature=(3, 4),
+        tags=("guitar", "country", "waltz", "soft"),
+    ),
+    StrumPattern(
+        name="3/4 boom-chick",
+        # 3/4 兜底节拍：每拍一记四分下扫，平铺 3 遍 = 一小节，均分三拍的最小骨架。
+        # 与 4/4 boom-chick 严格同构（单动作 1 拍动机、min_beats=1 平铺任意拍数），
+        # 仅显式声明 3/4 拍号——_boom_chick_fallback 的 min_beats=1 分支据此能取到
+        # 同拍号兜底，且无 4/4→3/4 跨分子的 W_TIME_SIG_NUMERATOR 轻罚。
+        # 兜底模板：退出 verse/prechorus（分解段落，532132 等更合适），无 tags
+        # （不靠 tag 匹配参与选型，只作 _boom_chick_fallback 用），避免在 guitar/slow
+        # 标签下抢过 532132 等分解模板。
+        grid_motif=(Stroke("D", 4, "strong"),),
+        motif_beats=1,
+        min_beats=1,
+        ideal_beats=(3,),
+        sections=("chorus", "bridge", "outro"),
+        style="folk",
+        time_signature=(3, 4),
+    ),
+    StrumPattern(
+        name="3/4 arpeggio cadence (tail)",
+        # 3 拍收束琶音：根音(4分 强)→三音(4分)→顶弦(4分 弱)，三音级进收尾。
+        # 标 positions=("tail",) 做段落末和弦收束，与 4/4/6/8 cadence 同机制。
+        grid_motif=(
+            Pluck(role=Root(), duration=4, accent="strong"),
+            Pluck(role=Third(), duration=4),
+            Pluck(role=TopN(2, "comfortable"), duration=4, accent="weak"),
+        ),
+        motif_beats=3,
+        min_beats=3,
+        ideal_beats=(3,),
+        sections=("verse", "bridge", "outro"),
+        style="folk",
+        technique="fingerpicking",
+        positions=("tail",),
+        time_signature=(3, 4),
         tags=("guitar", "slow", "soft", "classical", "new age"),
     ),
 ]
@@ -554,6 +708,9 @@ def _boom_chick_fallback(time_signature: tuple[int, int] = (4, 4)) -> StrumPatte
 W_SECTION = 2.5        # 段落不契合：当前段落不在模板 sections 里时的固定罚分
 W_DENSITY = 4.0        # 每偏离目标密度 1.0 的代价（密度差 0..1，故实际惩罚 0..4）
 W_IDEAL_BEATS = 1.5    # 拍数不在 ideal_beats 里时的罚分（鼓励「占几拍就用几拍周期」的模板）
+W_TRUNCATION = 3.0     # 非整动机截断罚系数：grid_for 尾部截断占动机时值的比例（0..1）乘此系数。
+                       # 截断出的「发明节奏」越占得多越罚——整动机对齐的模板优先。量级与
+                       # W_DENSITY 同级：截断一半动机（ratio 0.5）≈ 偏离目标密度 0.375 拍的罚。
 W_WHOLE_MOTIF = 2.0    # 整动机奖励：beats 恰等于 motif_beats 且 ideal_beats 是单元素 (motif_beats,)
                        # 的模板减分。这类「专属整动机」（如 4 拍周期的 pop D-DU-U-DU、4 拍 53231323
                        # 8 分分解）占满正好一个动机时最顺，奖励压住高密度通用短动机的密度优势。
@@ -567,12 +724,26 @@ W_TAGS = 5.0           # 标签不匹配度（0..1）的代价系数。musicnn �
                        # 维度主导但不一票否决。模板无 tags 或 ctx 无 musicnn_tags 时退回
                        # W_STYLE_MISMATCH（向后兼容）。
 W_TECHNIQUE = 6.0      # 技法基线不符：段落技法基线与模板技法不一致时的固定罚分（段落级混排关键维度）
+W_TECHNIQUE_SOFT = 2.0 # 技法基线近邻不符：fingerpicking 基线对真琶音（technique="arpeggio"）模板的
+                       # 轻罚。fingerpicking（分解逐弦拨完整律动）与 arpeggio（一串音快速依次拨出的
+                       # 单次手势）同为拨弦类但听感/用途不同：分解是段落主体，真琶音是收束手势
+                       # （现有 arpeggio 模板都标 positions=("tail",)）。fingerpicking 基线时应优先
+                       # 分解模板，但真琶音仍可凭 tail 奖励/段落契合在尾位胜出——轻罚（2.0 <
+                       # W_POSITION_TAIL_BONUS+其他契合项）而非同 W_TECHNIQUE 重罚（6.0 会连尾位
+                       # 收束也压死，回到「技法基线二元」的旧缺陷）。arpeggio 基线保持宽匹配
+                       # （分解/琶音均 0 罚）不变。
 W_COHERENCE = 0.8      # 连贯性：与相邻和弦密度变化方向不一致时的罚分
-W_TIME_SIG_MISMATCH = 50.0  # 跨拍号借用重罚：模板自带 time_signature 与请求拍号不一致时加。
-                            # 远大于其他维度总和（~20），让跨拍号模板实际不入候选（同拍号优先）；
-                            # 仅当同拍号模板全被拍数门槛硬筛掉时才可能被选——极端兜底场景下塞个错拍号
-                            # 模板总比崩好（保 boom-chick fallback 不变量）。仅 ctx.time_signature 显式给定
-                            # 时触发，4/4 缺省不干预。6/8 歌曲据此选 6/8 专属模板、拒 4/4。
+W_TIME_SIG_MISMATCH = 50.0  # 跨拍号借用重罚（分母不同，/4 vs /8）：模板自带 time_signature 与
+                            # 请求拍号不一致时加。远大于其他维度总和（~20），让跨拍号模板实际不入候选
+                            # （同拍号优先）；仅当同拍号模板全被拍数门槛硬筛掉时才可能被选——极端兜底
+                            # 场景下塞个错拍号模板总比崩好（保 boom-chick fallback 不变量）。
+                            # 仅 ctx.time_signature 显式给定时触发，4/4 缺省不干预。6/8 歌曲据此
+                            # 选 6/8 专属模板、拒 4/4。
+W_TIME_SIG_NUMERATOR = 6.0  # 同分母跨分子借用轻罚（如 4/4 模板用于 3/4 歌曲）：tick 单位一致
+                            # （/4 一拍 4 tick），短动机栅格平铺到任意拍数都合法，只是周期相位
+                            # 会错位（4 拍周期 vs 3 拍小节），降为与 W_TECHNIQUE 同量级的固定罚
+                            # 而非重罚。少见拍号（3/4）专属模板有限，4/4 短模板兜底；专属模板
+                            # 拍号契合 0 罚仍优先。
 W_POSITION = 2.5       # 位置不契合：模板声明了 positions（非空）但当前位置不在其中时的固定罚分
                        # （与 W_SECTION 同量级）。位置中立的模板（positions 为空）不罚。
                        # 重点在 tail 收束处理：标 positions=("tail",) 的琶音收尾模板在非 tail 位置被压下。
@@ -594,6 +765,10 @@ W_BPM_HIGH = 3.0       # 高 BPM 下每超出密度阈值 1.0 的代价。密度
                        # 4 次拨弦已接近指弹极限，需让位低密度模板。
 W_BPM_LOW = 1.5        # 低 BPM 下高密度连续扫弦的罚分。慢歌用分解更顺，连续扫弦在低 BPM 下听起来
                        # 「冲」，与技法基线互补（基线管整段扫/拆，此维度管密度细节）。
+W_ONSET_AUDIO = 0.6    # 实测起音密度在目标密度融合里的权重（静态段落表占 1-W=0.4）。音频主导：
+                       # 同一 "verse" 标签下实际疏密可以差很远（民谣 verse vs rock verse），静态表
+                       # 只表达段落性格先验（chorus 偏密）；0.6 让实测拉动目标但不至于完全接管
+                       # （musicnn 段落切片误差、静音边界混入 onsets 都会污染实测值）。
 
 
 def _beats_per_bar(time_signature: tuple[int, int]) -> int:
@@ -606,7 +781,12 @@ def _beats_per_bar(time_signature: tuple[int, int]) -> int:
     return num if den == 4 else num // 3
 
 
-def _target_density(section: str, beats: int, time_signature: tuple[int, int] = (4, 4)) -> float:
+def _target_density(
+    section: str,
+    beats: int,
+    time_signature: tuple[int, int] = (4, 4),
+    onset_density: float | None = None,
+) -> float:
     """该段落 + 拍数下的目标节奏密度。
 
     副歌偏密、主歌偏疏；占拍数少时单拍密度略高（要在一拍内把动机弹完），
@@ -615,6 +795,10 @@ def _target_density(section: str, beats: int, time_signature: tuple[int, int] = 
     ``beats >= 一小节拍数`` 的「满小节」阈值按拍号归一化：6/8 满 2 拍、4/4 满 4 拍，
     避免裸 ``beats`` 阈值把 6/8 的 2 拍小节误判为「半小节」而压低密度。``beats <= 1``
     的单拍语义与拍号无关，保持绝对。
+
+    ``onset_density`` 给定时（该段落音频实测起音密度，已由调用方归一化到静态表值域）
+    与静态表值加权融合：``W_ONSET_AUDIO * onset + (1-W_ONSET_AUDIO) * d``。音频主导、
+    段落性格保留；``None``（默认）时纯静态表，与旧版行为一致。
     """
     base = {"verse": 0.35, "prechorus": 0.5, "chorus": 0.75, "bridge": 0.45, "outro": 0.3}
     d = base.get(section, 0.5)
@@ -623,6 +807,10 @@ def _target_density(section: str, beats: int, time_signature: tuple[int, int] = 
         d += 0.1
     elif beats >= _beats_per_bar(time_signature):
         d -= 0.05
+    if onset_density is not None:
+        # 实测起音密度与静态表值域对齐后再融合（调用方归一化失手时不至于爆炸）。
+        measured = max(0.0, min(1.0, onset_density))
+        d = W_ONSET_AUDIO * measured + (1.0 - W_ONSET_AUDIO) * d
     return max(0.0, min(1.0, d))
 
 
@@ -709,15 +897,33 @@ def pattern_cost(
 
     # 技法基线（段落级混排关键维度）：基线明确时，技法不符的模板罚分。
     # 不剔除--允许在基线为 strum 时仍选出分解（若它密度/段落契合远胜），只压低顺位。
-    if technique_baseline == "arpeggio" and pattern.is_strum:
+    # - 扫弦 vs 拨弦类（分解/琶音）互斥，罚满 W_TECHNIQUE；
+    # - "fingerpicking" 基线额外给真琶音（technique="arpeggio"）轻罚 W_TECHNIQUE_SOFT：
+    #   分解是段落主体、真琶音是收束手势，主体应优先选分解模板，但真琶音仍可凭
+    #   tail 奖励/段落契合在尾位胜出（不会被重罚压死）；
+    # - "arpeggio" 基线宽匹配：分解与琶音均不罚，仅扫弦罚——保持 musicnn
+    #   guitar/slow 段落标签的既有链路行为不变。
+    if technique_baseline in ("fingerpicking", "arpeggio") and pattern.is_strum:
         cost += W_TECHNIQUE
-    elif technique_baseline == "strum" and pattern.is_arpeggio:
+    elif technique_baseline == "strum" and not pattern.is_strum:
         cost += W_TECHNIQUE
+    elif technique_baseline == "fingerpicking" and pattern.is_arpeggio:
+        cost += W_TECHNIQUE_SOFT
 
-    # 密度贴合。「满小节」阈值按拍号归一化（6/8 满 2 拍 vs 4/4 满 4 拍）。
+    # 密度贴合：用**实例化后**的密度（grid_for(beats) 平铺/截断后的真实输出），
+    # 而非动机密度——非整动机拍数下截断前缀的密度与动机密度可能不同，评分必须
+    # 对齐实际演奏的栅格。「满小节」阈值按拍号归一化（6/8 满 2 拍 vs 4/4 满 4 拍）。
+    # ctx.onset_density 给定时（段落音频实测起音密度）目标密度与静态表融合。
     ts = ctx.time_signature or (4, 4)
-    target = _target_density(section, beats, ts)
-    cost += abs(pattern.density() - target) * W_DENSITY
+    target = _target_density(section, beats, ts, ctx.onset_density)
+    density = pattern.instantiated_density(beats)
+    cost += abs(density - target) * W_DENSITY
+
+    # 截断罚：beats 非 motif_beats 整数倍时尾部是动机前缀截断（「发明节奏」），
+    # 按截断比例罚分——整动机对齐的模板优先，截断占比高的靠后。与
+    # W_WHOLE_MOTIF（整动机奖励）互补：那个只覆盖「专属整动机」单元素
+    # ideal_beats 的场景，此罚覆盖所有非整倍数截断。
+    cost += pattern.truncation_ratio(beats) * W_TRUNCATION
 
     # 拍数理想区间：占几拍就用几拍周期的模板最顺。
     if beats not in pattern.ideal_beats:
@@ -734,18 +940,26 @@ def pattern_cost(
     ):
         cost -= W_WHOLE_MOTIF
 
-    # 拍号契合：模板自带 time_signature，与 ctx 拍号不一致即重罚到实际不入候选。
-    # 6/8 歌曲据此选 6/8 专属模板、拒 4/4 模板（反之亦然），避免跨拍号借用劈跨拍动作
-    # 破坏附点律动。ctx.time_signature 为 None 时按 4/4 处理（与旧式默认调用一致），
+    # 拍号契合：模板自带 time_signature，与 ctx 拍号不一致时分两档：
+    # - 分母不同（/4 vs /8）：tick 单位不同（16 分位 vs 8 分位），栅格语义不兼容，
+    #   维持 W_TIME_SIG_MISMATCH 重罚到实际不入候选；
+    # - 分母相同、分子不同（4/4 模板用于 3/4 歌曲）：tick 单位一致，栅格可平铺
+    #   （1 拍短动机平铺到任意拍数都干净），降为 W_TIME_SIG_NUMERATOR 轻罚——
+    #   3/4 等少见拍号的专属模板有限，4/4 短模板（boom-chick、5323 等）作跨分子
+    #   弹药兜底；4 拍周期模板与 3 拍小节的相位错位由 W_TRUNCATION 截断罚表达。
+    #   反向（3/4 模板用于 4/4 歌曲）同样吃此罚垫底，4/4 默认选型行为不变。
+    # ctx.time_signature 为 None 时按 4/4 处理（与旧式默认调用一致），
     # 故 6/8 模板在无拍号的 4/4 默认选型里吃重罚、不参与——只有显式给 (6,8) 才用 6/8 模板。
     ctx_ts = ctx.time_signature or (4, 4)
     if pattern.time_signature != ctx_ts:
-        cost += W_TIME_SIG_MISMATCH
+        if pattern.time_signature[1] != ctx_ts[1]:
+            cost += W_TIME_SIG_MISMATCH
+        else:
+            cost += W_TIME_SIG_NUMERATOR
 
     # BPM 可演奏性：仅 ctx 显式给 bpm 时介入。
     # 高 BPM（> BPM_HIGH_THRESHOLD）：过密模板按超出密度阈值罚分，模拟手指/拨片极限。
     # 低 BPM（< BPM_LOW_THRESHOLD）：高密度连续扫弦轻微罚分，慢歌分解更顺。
-    density = pattern.density()
     if ctx.bpm is not None:
         if ctx.bpm > BPM_HIGH_THRESHOLD and density > 0.5:
             cost += (density - 0.5) * W_BPM_HIGH
@@ -903,8 +1117,10 @@ def enumerate_rhythm_patterns(
         请求风格，``"folk" / "pop" / "rock"`` 之一。风格不匹配的模板不剔除、只降级。
         ``ctx`` 给定时此项被覆盖。
     technique_baseline
-        段落技法基线，``"strum" / "arpeggio" / "mixed" / None``。基线明确时，技法不符的
-        模板罚 ``W_TECHNIQUE``；``mixed`` / ``None``（默认）不罚。``ctx`` 给定时此项被覆盖。
+        段落技法基线，``"strum" / "fingerpicking" / "arpeggio" / "mixed" / None``。基线明确时，
+        扫弦 vs 拨弦类不符罚 ``W_TECHNIQUE``；``"fingerpicking"`` 额外给真琶音轻罚
+        ``W_TECHNIQUE_SOFT``；``"arpeggio"`` 宽匹配：分解与琶音均不罚；
+        ``mixed`` / ``None``（默认）不罚。``ctx`` 给定时此项被覆盖。
     max_stretch
         取首选指法时的最大跨度约束，透传给 :func:`chord_fingering.enumerate_fingerings`。
         ``ctx`` 给定时以其 ``max_stretch`` 为准。
@@ -935,7 +1151,7 @@ def enumerate_rhythm_patterns(
     progression = list(progression)
 
     # 预算每个和弦的目标密度，供连贯性判据用前后相邻差。
-    targets = [_target_density(eff_section, b, ctx.time_signature or (4, 4)) for _, b in progression]
+    targets = [_target_density(eff_section, b, ctx.time_signature or (4, 4), ctx.onset_density) for _, b in progression]
     # 预算每个和弦首选 voicing：扫弦用其闷弦结构，分解用其实例化弦角色。
     voicings = [_resolve_voicing(c, fretboard, stretch) for c, _ in progression]
     muted = [_voicing_muted(v, fretboard) for v in voicings]
@@ -1064,7 +1280,7 @@ def arrange_progression(
         return []
 
     # 预算目标密度、voicing、闷音（与 enumerate_rhythm_patterns 同构）。
-    targets = [_target_density(eff_section, b, ctx.time_signature or (4, 4)) for _, b in progression]
+    targets = [_target_density(eff_section, b, ctx.time_signature or (4, 4), ctx.onset_density) for _, b in progression]
     voicings = [_resolve_voicing(c, fretboard, stretch) for c, _ in progression]
     muted = [_voicing_muted(v, fretboard) for v in voicings]
 
