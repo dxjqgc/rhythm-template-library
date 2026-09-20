@@ -24,10 +24,13 @@ BENCHMARK: list[tuple[list[tuple[str, int]], str, str, list[str]]] = [
     ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "pop", ["D-D-DU (1拍16分)"]),
     # 每和弦 1 拍的摇滚副歌 -> 全下扫重拍。
     ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "rock", ["rock 8th down"]),
-    # 主歌民谣 4-2-2：4 拍 C 用 53231323 分解（民谣经典动作），2 拍 G/Am 用 folk D-DU 扫弦。
-    # 分解模板引入后，4 拍专属整动机在 verse folk 上合理胜出；2 拍和弦放不下 4 拍分解动机，
-    # 退回扫弦。技法基线 None 下扫/拆混排，符合段落级混排预期。
-    ([("C", 4), ("G", 2), ("Am", 2)], "verse", "folk", ["53231323 (8分)", "folk D-DU"]),
+    # 主歌民谣 4-2-2：4 拍 C 用 53231323 分解（民谣经典动作），2 拍 G/Am 也压向分解
+    # （arpeggio placeholder / arpeggio cadence short 等短分解动机）。段落技法先验
+    # （W_SECTION_STRUM）把主歌扫弦压成次选——弹唱惯例主歌铺垫用分解；2 拍短和弦
+    # 放不下 4 拍分解动机，但 1 拍短分解（arpeggio placeholder）放得下，不再退回
+    # 扫弦。技法基线 None + rock 标签（musicnn 强证据）下扫弦仍可胜出（软罚不排除）。
+    ([("C", 4), ("G", 2), ("Am", 2)], "verse", "folk",
+     ["53231323 (8分)", "arpeggio placeholder", "arpeggio cadence short (tail)"]),
 ]
 
 TOP_N = 3
@@ -331,8 +334,11 @@ def check_selection_context(gtr) -> None:
     print(f"  verse默认(无实测)  -> {[e.pattern.name for e in e_default]}")
     print(f"  verse实测疏(0.1)  -> {[e.pattern.name for e in e_sparse]}")
     print(f"  verse实测密(1.0)  -> {[e.pattern.name for e in e_dense]}")
-    assert mid(e_sparse).density() < mid(e_default).density(), (
-        f"实测疏(0.1)应选出更疏模板: {mid(e_sparse).name}({mid(e_sparse).density()}) "
+    # 段落技法先验（W_SECTION_STRUM）落下后，verse 2 拍短和弦默认已翻选短分解
+    # （arpeggio placeholder，密度 0.25 = 库内最疏档），onset 疏拉不动已贴地的疏度
+    # 下限——稳健不变量改为 dense > sparse（极密实测拉开密度差必然可观测）。
+    assert mid(e_sparse).density() <= mid(e_default).density(), (
+        f"实测疏(0.1)不应选出更密模板: {mid(e_sparse).name}({mid(e_sparse).density()}) "
         f"vs 默认 {mid(e_default).name}({mid(e_default).density()})"
     )
     assert mid(e_dense).density() > mid(e_default).density(), (

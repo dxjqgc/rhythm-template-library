@@ -24,7 +24,11 @@
 4. **技法基线**（段落级）：musicnn 给出的「该段落该扫还是该拆」倾向。基线为
    ``"fingerpicking"`` / ``"arpeggio"`` 时扫弦模板罚分、为 ``"strum"`` 时分解/
    琶音模板罚分（``"arpeggio"`` 宽匹配，分解与琶音均不罚）；``"mixed"`` /
-   ``None`` 不罚，让密度/段落契合自己选。这是段落级混排的关键维度。
+   ``None`` 不罚，让密度/段落契合自己选。这是段落级混排的关键维度。此外，
+   ``"mixed"`` / ``None`` 下还有**段落技法先验**（软罚）：主歌/尾奏（verse/outro）
+   下扫弦模板加 ``W_SECTION_STRUM``——弹唱惯例主歌铺垫用分解、不直接上扫弦；
+   软罚只降顺位不排除（强风格证据/实测极密下扫弦仍可胜出），显式基线给出时
+   跳过（不叠加）。
 5. **密度贴合**：模板密度与该段落 + 和弦位置的目标密度之差。
 6. **整动机奖励**：``beats`` 恰等于 ``motif_beats`` 且 ``ideal_beats`` 是单元素
    ``(motif_beats,)`` 的专属整动机模板减分。占满一个专属动机时最顺，奖励压住高密度
@@ -119,7 +123,10 @@ class SelectionContext:
         ``"fingerpicking"`` 基线额外给真琶音（``technique="arpeggio"``）模板轻罚
         ``W_TECHNIQUE_SOFT``（分解优先，真琶音仍可凭 tail 奖励收束）；
         ``"arpeggio"`` 宽匹配：分解与琶音都不罚；``mixed`` / ``None``（默认）不罚。
-        段落级混排的关键维度。
+        段落级混排的关键维度。**显式基线还压住段落技法先验**：``mixed`` / ``None``
+        下 verse/outro 段落的扫弦模板会吃 ``W_SECTION_STRUM`` 软罚（弹唱惯例：
+        主歌不直接上扫弦，软罚降顺位不排除），显式给出基线（歌曲侧实测证据）时
+        该先验跳过、不叠加。
     time_signature
         拍号 ``(分子, 分母)``，如 ``(4, 4)`` / ``(3, 4)`` / ``(6, 8)``。分子非 4 时，
         对 ``motif_beats=4`` 的 4 拍周期模板罚分（3/4 拍下 4 拍动机天然不周期对齐）。
@@ -724,6 +731,16 @@ W_TAGS = 5.0           # 标签不匹配度（0..1）的代价系数。musicnn �
                        # 维度主导但不一票否决。模板无 tags 或 ctx 无 musicnn_tags 时退回
                        # W_STYLE_MISMATCH（向后兼容）。
 W_TECHNIQUE = 6.0      # 技法基线不符：段落技法基线与模板技法不一致时的固定罚分（段落级混排关键维度）
+W_SECTION_STRUM = 2.0  # 段落技法先验（软罚）：主歌/尾奏（verse/outro）下扫弦模板的固定罚分。
+                       # 弹唱惯例：主歌铺垫用分解、副歌爆发用扫弦，主歌不该直接上扫弦。软罚而非
+                       # W_TECHNIQUE 重罚——只降顺位不排除：4 拍长和弦选分解（密度+整动机奖励
+                       # 已如此），2 拍短和弦翻向 1 拍短分解动机（arpeggio placeholder 等，
+                       # 放得进 2 拍和弦）；强证据下扫弦仍可胜出（musicnn rock/fast 标签、
+                       # 实测极密 onset 把 rock 8th down 等重新拉回首位）。
+                       # technique_baseline 显式给出（strum/fingerpicking/arpeggio，歌曲侧
+                       # 实测证据）时跳过——两个维度不叠加，显式基线优先于静态段落先验；
+                       # mixed/None（未提供基线）时正常生效。稀疏扫弦（boom-chick，密度 0.25）
+                       # 不豁免：密度维度自然保住它在极疏场景的竞争力。
 W_TECHNIQUE_SOFT = 2.0 # 技法基线近邻不符：fingerpicking 基线对真琶音（technique="arpeggio"）模板的
                        # 轻罚。fingerpicking（分解逐弦拨完整律动）与 arpeggio（一串音快速依次拨出的
                        # 单次手势）同为拨弦类但听感/用途不同：分解是段落主体，真琶音是收束手势
@@ -909,6 +926,20 @@ def pattern_cost(
         cost += W_TECHNIQUE
     elif technique_baseline == "fingerpicking" and pattern.is_arpeggio:
         cost += W_TECHNIQUE_SOFT
+    elif (
+        technique_baseline in (None, "mixed")
+        and section in ("verse", "outro")
+        and pattern.is_strum
+    ):
+        # 段落技法先验（软罚）：无显式基线时，弹唱惯例「主歌/尾奏铺垫用分解、副歌爆发
+        # 用扫弦」自动生效——verse/outro 下扫弦模板加 W_SECTION_STRUM 软罚。与上面的
+        # 显式基线互斥（elif）：technique_baseline 是歌曲侧实测证据，优先于静态段落
+        # 先验，两个维度不叠加——strum 基线的摇滚主歌不被静态先验压、fingerpicking
+        # 基线已有 W_TECHNIQUE 重罚不重复加。mixed 语义是「主歌拆副歌扫之类混排，
+        # 不在此层罚分」——与 None 同样不干预技法，段落先验正常生效。
+        # 软罚降顺位不排除：2 拍短和弦翻向 1 拍短分解动机；强风格证据（musicnn
+        # rock/fast）或实测极密 onset 下 rock 8th down 等扫弦仍可胜出。
+        cost += W_SECTION_STRUM
 
     # 密度贴合：用**实例化后**的密度（grid_for(beats) 平铺/截断后的真实输出），
     # 而非动机密度——非整动机拍数下截断前缀的密度与动机密度可能不同，评分必须

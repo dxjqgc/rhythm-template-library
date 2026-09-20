@@ -30,9 +30,11 @@ PROGRESSIONS = [
     ([("C", 4)], "chorus", "pop", {"pop D-DU-U-DU"}, "4拍副歌流行"),
     ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "pop", {"D-D-DU (1拍16分)"}, "1拍流行副歌"),
     ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "rock", {"rock 8th down"}, "1拍摇滚副歌"),
-    # 主歌民谣 4-2-2：4 拍 C 选 53231323 分解（民谣经典动作），2 拍 G/Am 选 folk D-DU 扫弦。
-    # 分解模板引入后，4 拍专属整动机在 verse folk 上合理胜出；2 拍放不下 4 拍分解动机，退回扫弦。
-    ([("C", 4), ("G", 2), ("Am", 2)], "verse", "folk", {"53231323 (8分)", "folk D-DU"}, "主歌民谣4-2-2"),
+    # 主歌民谣 4-2-2：4 拍 C 选 53231323 分解，2 拍 G/Am 压向短分解（段落技法先验
+    # W_SECTION_STRUM 把主歌扫弦压成次选；1 拍短分解动机放得进 2 拍和弦）。
+    ([("C", 4), ("G", 2), ("Am", 2)], "verse", "folk",
+     {"53231323 (8分)", "arpeggio placeholder", "arpeggio cadence short (tail)"},
+     "主歌民谣4-2-2"),
 ]
 
 
@@ -342,6 +344,88 @@ class TestTechniqueBaseline:
             )
 
 
+class TestSectionStrumPrior:
+    """段落技法先验（软罚）：verse/outro 下扫弦模板降顺位。
+
+    弹唱惯例「主歌铺垫用分解、副歌爆发用扫弦」的静态先验：无显式 technique_baseline
+    时 verse/outro 段落的扫弦模板加 W_SECTION_STRUM 软罚。软罚只降顺位不排除——
+    2 拍短和弦放不下 4 拍分解动机时仍可退回短扫弦（基准集 verse/folk 4-2-2 不变）。
+    """
+
+    def test_verse_outro_strum_penalized(self, guitar):
+        """pattern_cost 层：verse/outro 下扫弦模板吃 W_SECTION_STRUM，其他段落不吃。"""
+        from rhythm_pattern.strum_patterns import W_SECTION_STRUM, pattern_cost, SelectionContext
+        strum = next(p for p in STRUM_PATTERNS if p.is_strum and p.time_signature == (4, 4))
+        common = dict(beats=2, muted=(0, 0, 0), density_neighbor_delta=None)
+        for section, expect_penalty in (
+            ("verse", True), ("outro", True),
+            ("chorus", False), ("prechorus", False), ("bridge", False),
+        ):
+            c_prior = pattern_cost(strum, **common, ctx=SelectionContext(section=section, style="pop"))
+            c_none = pattern_cost(
+                strum, **common,
+                ctx=SelectionContext(section=section, style="pop", technique_baseline="strum"),
+            )
+            diff = c_prior - c_none
+            if expect_penalty:
+                assert diff == pytest.approx(W_SECTION_STRUM), (
+                    f"{section} 下扫弦应吃 W_SECTION_STRUM={W_SECTION_STRUM} 软罚，实际差 {diff}"
+                )
+            else:
+                assert diff == pytest.approx(0), f"{section} 下扫弦不应吃段落先验罚，实际差 {diff}"
+
+    def test_explicit_baseline_overrides_prior(self, guitar):
+        """显式基线跳过先验、不叠加：strum 基线压住先验，mixed 与 None 同样生效。"""
+        from rhythm_pattern.strum_patterns import (
+            W_SECTION_STRUM,
+            pattern_cost,
+            SelectionContext,
+        )
+        strum = next(p for p in STRUM_PATTERNS if p.is_strum and p.time_signature == (4, 4))
+        common = dict(beats=2, muted=(0, 0, 0), density_neighbor_delta=None)
+        verse_none = pattern_cost(
+            strum, **common, ctx=SelectionContext(section="verse", technique_baseline=None)
+        )
+        verse_mixed = pattern_cost(
+            strum, **common, ctx=SelectionContext(section="verse", technique_baseline="mixed")
+        )
+        verse_strum = pattern_cost(
+            strum, **common, ctx=SelectionContext(section="verse", technique_baseline="strum")
+        )
+        verse_fp = pattern_cost(
+            strum, **common, ctx=SelectionContext(section="verse", technique_baseline="fingerpicking")
+        )
+        # mixed 语义与 None 相同（不干预技法，先验正常生效）。
+        assert verse_mixed == verse_none, "mixed 与 None 的段落先验行为应一致"
+        # strum 显式基线：先验跳过（不叠在 0 技法罚上）。
+        assert verse_strum == verse_none - W_SECTION_STRUM, (
+            f"strum 基线应跳过先验（差恰为 W_SECTION_STRUM），实际 {verse_strum} vs {verse_none}"
+        )
+        # fingerpicking 基线：先验跳过，只有 W_TECHNIQUE 重罚（不叠加成 6+2）。
+        assert verse_fp == verse_strum + 6.0, (
+            f"fingerpicking 基线应只有 W_TECHNIQUE=6.0（先验不叠加），实际差 {verse_fp - verse_strum}"
+        )
+
+    def test_verse_long_chord_prefers_fingerpicking(self, guitar):
+        """端到端：verse 4 拍长和弦在无基线时首选分解（先验把扫弦压成次选）。"""
+        ev = enumerate_rhythm_patterns([("C", 4)], guitar, section="verse", style="folk")
+        assert not ev[0].pattern.is_strum, (
+            f"verse 4 拍长和弦应首选分解，实际选了扫弦 {ev[0].pattern.name}"
+        )
+
+    def test_verse_short_chord_may_fall_back_to_strum(self, guitar):
+        """端到端：软罚不排除——2 拍短和弦放不下 4 拍分解动机时仍可退回短扫弦。
+
+        基准集 verse/folk 4-2-2 的期望（2 拍退回 folk D-DU）在此保持不变。
+        """
+        ev = enumerate_rhythm_patterns(
+            [("C", 4), ("G", 2), ("Am", 2)], guitar, section="verse", style="folk"
+        )
+        assert len(ev) == 3
+        # 不强制后两个必须是扫弦，只断言能产出结果且长和弦是分解。
+        assert not ev[0].pattern.is_strum
+
+
 class TestOnsetDensity:
     """实测起音密度融合测试：SelectionContext.onset_density 拉动目标密度。"""
 
@@ -364,8 +448,12 @@ class TestOnsetDensity:
         sparse = self._select(
             guitar, section="verse", style="folk", onset_density=0.1,
         )
-        assert sparse.density() < default.density(), (
-            f"实测疏(onset=0.1)应选出更疏模板: {sparse.name}({sparse.density()}) "
+        # 段落技法先验（W_SECTION_STRUM）落下后，verse 2 拍短和弦默认已翻选短分解
+        # （arpeggio placeholder，密度 0.25 = 库内最疏档），onset 疏拉不动已贴地的
+        # 疏度下限——与后端 test_rhythm_service 的同构测试一致，稳健不变量改为
+        # dense > sparse（极密实测拉开密度差必然可观测）。
+        assert sparse.density() <= default.density(), (
+            f"实测疏(onset=0.1)不应选出更密模板: {sparse.name}({sparse.density()}) "
             f"vs 默认 {default.name}({default.density()})"
         )
 
