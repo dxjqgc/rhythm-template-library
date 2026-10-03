@@ -55,6 +55,7 @@ uv run python -m rhythm_pattern.serialization --migrate-legacy  # 旧 None 格 D
 两个入口：
 - `enumerate_rhythm_patterns(progression, gtr, ...)` — 逐和弦贪心取第 1 名，无状态，单点查询。
 - `arrange_progression(progression, gtr, ctx=..., k=...)` — 整段编排：Top-K 候选 + DP 选路径，保证连贯，并按和弦段内位置（首/中/尾）自动应用位置维度（尾和弦收束）。
+- `plan_song_rhythm(progression, gtr, ctx=..., chord_ctxs=..., max_families=2)` — **全曲统一选型**：先裁技法族（扫弦/拨弦，抒情歌裁到单族）再各族选基础模板 + 短模板，最后逐和弦分配，全曲最多 `2 × max_families` 个模板（常见 2 = 一分解一扫弦）。逐段调用等于退回段落级选型——它要的是整首歌的时间序进行 + 逐和弦段落上下文。收尾手势模板（`positions` 非空，如 arpeggio cadence）不进基础候选。
 
 `pattern_cost` 消费 `SelectionContext`（收敛段落/风格/技法基线/拍号/BPM，字段全可选，空则降级到默认 chorus/pop），把 10 个维度折算成同一尺度连续代价：拍数可行性（硬约束剔除）、段落契合、风格匹配、技法基线、密度贴合、整动机奖励、拍号契合、BPM 可演奏性、扫弦可行性（复用 `chord_fingering.count_muted`）、进行级连贯性。**权重是文件顶部 `W_*` 常量**（16 个），调权重先看这里。`W_TIME_SIG_MISMATCH` 量级大到不入候选（跨拍号借用重罚）。
 

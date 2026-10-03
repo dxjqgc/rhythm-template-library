@@ -29,8 +29,8 @@ uv sync
 ```python
 from pytheory import Fretboard
 from rhythm_pattern import (
-    enumerate_rhythm_patterns, arrange_progression, SelectionContext,
-    fingering_sequence,
+    enumerate_rhythm_patterns, arrange_progression, plan_song_rhythm,
+    SelectionContext, fingering_sequence,
 )
 
 gtr = Fretboard.guitar()
@@ -48,12 +48,30 @@ arranged = arrange_progression(progression, gtr, ctx=ctx)
 for e in arranged:
     print(e.chord, e.beats, e.pattern.name)
 
+# 全曲统一选型：整首歌收敛到 1-2 个基本节奏型（一分解一扫弦），
+# 段落只决定「用哪一个」。抒情歌只剩分解，不写扫弦。
+song = [("C", 4), ("G", 2), ("Am", 2), ("F", 4)] * 4   # 整首歌按时间序传
+chord_ctxs = [
+    SelectionContext(section=("verse" if i < 4 else "chorus"),
+                     musicnn_tags=(("guitar", 0.8), ("soft", 0.6)), onset_density=0.4)
+    for i in range(len(song))
+]
+planned = plan_song_rhythm(song, gtr, ctx=ctx, chord_ctxs=chord_ctxs)
+print(sorted({e.pattern.name for e in planned}))  # -> 2 个模板
+
 # 栅格转指法动作序列（带显式 duration 时值）
 for action in fingering_sequence(events[0].grid):
     print(action.kind, action.strings, action.duration)
 ```
 
-`enumerate_rhythm_patterns` 逐和弦无状态取第 1 名，适合单点查询；`arrange_progression` 跨和弦 DP，保证整段连贯。`SelectionContext` 收敛所有「来自歌曲属性的选择因素」（段落、风格、技法基线、拍号、BPM），字段全可选，未填的维度退回默认行为，裸调用与有歌曲分析组件接入两种场景中立。
+三个入口，作用域不同：
+
+- `enumerate_rhythm_patterns` — 逐和弦无状态取第 1 名，单点查询。
+- `arrange_progression` — 跨和弦 Top-K + DP，**逐段**连贯（每个和弦仍可能换模板）。
+- `plan_song_rhythm` — 跨**全曲**：先定全曲节奏型集合（一分解一扫弦，抒情歌单族），
+  再把和弦分配到集合里的某一个。想「一首歌只有一两种基本节奏型」时用这个。
+
+`SelectionContext` 收敛所有「来自歌曲属性的选择因素」（段落、风格、技法基线、拍号、BPM、musicnn 标签、实测起音密度），字段全可选，未填的维度退回默认行为，裸调用与有歌曲分析组件接入两种场景中立。
 
 ### 指法枚举
 
@@ -148,7 +166,8 @@ uv run rhythm-web                       # 或 uv run python -m web_manager.serve
 ```
 rhythm_pattern/           # 核心：节奏型模板库 + 选型器
   model.py                # 数据模型：Stroke/Pluck/Rest/RhythmGrid/StrumPattern/FingeringAction
-  strum_patterns.py       # 模板库 STRUM_PATTERNS + 选型器 + arrange_progression + SelectionContext
+  strum_patterns.py       # 模板库 STRUM_PATTERNS + 选型器 + arrange_progression
+                          #   + plan_song_rhythm（全曲统一选型）+ SelectionContext
   string_role.py          # 弦角色：Root/Third/Fifth/Seventh/TopN/All（按 voicing 实例化弦号）
   serialization.py        # JSON 模板仓库 TemplateRepository + 旧格式迁移工具
   data/templates.json     # 模板数据库（14 个初始模板，由硬编码库 seed）

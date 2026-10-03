@@ -75,6 +75,7 @@ __all__ = [
     "get_pattern_source",
     "enumerate_rhythm_patterns",
     "arrange_progression",
+    "plan_song_rhythm",
     "pattern_cost",
     "instantiate_pattern",
     "resolve_voicing",
@@ -1373,6 +1374,305 @@ def arrange_progression(
         )
         for i in range(n)
     ]
+    return events
+
+
+# --- 全曲统一选型（「一首歌 1-2 个基本节奏型」）────────────────────────────
+
+_FAMILY_STRUM = "strum"
+"""技法族「扫弦」。"""
+_FAMILY_PLUCK = "pluck"
+"""技法族「拨弦」：分解（fingerpicking）与琶音（arpeggio）同族。"""
+
+W_FAMILY_MARGIN = 2.0
+"""技法族保留门槛：某族在任一段落里落后该段最优族不超过此值时保留。
+
+全曲统一选型的目标是「一首歌最多 1-2 个基本节奏型」（一分解一扫弦），而不是
+逐和弦 / 逐段落另选新模板。技法族先按此门槛裁剪：抒情歌（musicnn 的
+guitar/slow/soft 标签 + 低起音密度）下扫弦族处处落后拨弦族超过此值 -> 整族被
+裁掉，全曲只留一个分解模板。量级与 ``W_SECTION_STRUM`` 同阶（软性偏好而非
+一票否决），调此值即调「多容易上第二族」。"""
+
+W_SHORT_FALLBACK = 1.0
+"""短和弦兜底罚：基础模板放不下的和弦（``beats < min_beats``）改用同族短模板时
+每个和弦的代价。让「覆盖更多和弦」的基础模板在分数接近时胜出——基础模板覆盖
+得越全，全曲实际用到的模板数越少。"""
+
+
+def _technique_family(pattern: StrumPattern) -> str:
+    """模板归属的技法族：扫弦一族、分解与琶音合为拨弦一族。
+
+    两族对应「一种扫弦 + 一种分解」的基本节奏型二分。琶音（arpeggio）与分解
+    （fingerpicking）同为拨弦类、听感与用途接近，合成一族才能让「抒情歌只留
+    一个分解模板」真正落到一个模板上。
+    """
+    return _FAMILY_STRUM if pattern.is_strum else _FAMILY_PLUCK
+
+
+def plan_song_rhythm(
+    progression: Sequence[tuple[str, int]],
+    fretboard: "Fretboard",
+    *,
+    ctx: SelectionContext | None = None,
+    chord_ctxs: Sequence[SelectionContext] | None = None,
+    max_families: int = 2,
+    section: str = "chorus",
+    style: str = "pop",
+    technique_baseline: TechniqueBaseline = None,
+    max_stretch: int = 4,
+) -> list[RhythmEvent]:
+    """**全曲统一选型**：为整首歌选一套（至多两族各一个）基本节奏型。
+
+    与 :func:`arrange_progression`（逐和弦 Top-K + DP）的根本区别在**作用域**：
+    后者在每个和弦上独立挑最优模板，DP 的转移代价（换模板 1.5、技法跳变 4.0）
+    压不住密度 / 截断 / 标签这些逐和弦维度（量级更大），于是同一段落的和弦会
+    翻出好几个模板——4 拍和弦用完整分解、2 拍和弦翻短分解、段尾再翻收束琶音，
+    一首歌下来 5-7 种节奏型。本函数反过来：**先定全曲的节奏型集合，再把和弦
+    分配到集合里的某一个**，从机制上保证输出种类受控。
+
+    三步：
+
+    1. **裁技法族**（``max_families``，默认 2）。按 :func:`_technique_family`
+       把模板分成扫弦族与拨弦族，逐段落算各族的最优分；某族只要在**某个**段落
+       里能追平该段最优族（差距 <= ``W_FAMILY_MARGIN``）就保留——两族本就分工
+       （主歌分解、副歌扫弦），各自在对方的主场落后是正常的。抒情歌（musicnn
+       guitar/slow/soft 标签 + 低起音密度）下扫弦族在每个段落都追不平，整族
+       被裁掉——全曲只剩分解，正是「抒情歌连扫弦都不需要」。
+    2. **段落选族 + 各族选基础模板**。段落按「族在该段的代表分」选族；基础模板
+       只在**该族实际要弹的和弦**（其被分配到的段落）上评分——在族用不到的段落
+       上评分会把基础模板拽向别处的口味。覆盖不到的和弦（``beats < min_beats``）
+       改用该族短模板计分并吃 ``W_SHORT_FALLBACK``，故覆盖越全的基础模板越占优。
+    3. **逐和弦分配**。取该段所辖族的基础模板；和弦拍数放不下它时
+       （``beats < min_beats``）退到该族的**短模板**（``min_beats == 1``，任何
+       拍数都放得下）——短模板全曲复用同一个，不是每个短和弦另选。
+
+    因此全曲实际用到的模板数最多为 ``2 × max_families``（基础 + 短，每族各一），
+    常见为 2（一分解一扫弦）或 1（纯分解）。
+
+    Parameters
+    ----------
+    progression
+        整首歌的和弦进行 ``[(和弦符号, 占拍数), ...]``，**按时间顺序跨段落**传入
+        （不是逐段调用——作用域是全曲，逐段调用等于退回段落级选型）。
+    fretboard
+        ``pytheory.Fretboard``。
+    ctx
+        全局上下文（拍号 / BPM / 风格 / 跨度约束）。``None`` 时由 ``section`` /
+        ``style`` / ``technique_baseline`` / ``max_stretch`` 组装。
+    chord_ctxs
+        逐和弦上下文，与 ``progression`` 等长同序，承载该和弦所属段落的
+        ``section`` / ``musicnn_tags`` / ``onset_density``。段落差异（主歌该分解、
+        副歌该扫弦）全靠它表达——这正是「段落决定用两个基本节奏型里的哪一个」。
+        ``None`` 时全曲用同一个 ``ctx``。
+    max_families
+        保留的技法族上限，默认 2（一分解一扫弦）。传 1 则强制全曲单一技法族。
+    section / style / technique_baseline / max_stretch
+        ``ctx`` 为 ``None`` 时的降级参数，语义同 :func:`arrange_progression`。
+
+    Returns
+    -------
+    list[RhythmEvent]
+        与 ``progression`` 等长、同序。
+    """
+    if ctx is None:
+        ctx = SelectionContext(
+            section=section, style=style,
+            technique_baseline=technique_baseline, max_stretch=max_stretch,
+        )
+    if max_families < 1:
+        raise ValueError(f"max_families 至少为 1，实际 {max_families}")
+    progression = list(progression)
+    n = len(progression)
+    if n == 0:
+        return []
+
+    if chord_ctxs is None:
+        ctxs: list[SelectionContext] = [ctx] * n
+    else:
+        ctxs = list(chord_ctxs)
+        if len(ctxs) != n:
+            raise ValueError(
+                f"chord_ctxs 长度 {len(ctxs)} 与 progression 长度 {n} 不一致"
+            )
+
+    stretch = ctx.max_stretch
+    ts = ctx.time_signature or (4, 4)
+    beats_of = [b for _, b in progression]
+
+    # 候选池：同拍号 + 位置中立的模板。全曲统一选型下没有「跨拍号借用兜底」的必要
+    # ——同拍号模板必然存在（4/4 有 boom-chick，6/8、3/4 各有专属），故直接硬筛，
+    # 省得让 W_TIME_SIG_MISMATCH 的重罚在均值里制造噪声。极端情况（数据源里没有
+    # 同拍号模板）退回全量，交由 pattern_cost 的拍号罚分排序。
+    #
+    # 排除标了 positions 的模板（如 arpeggio cadence (tail)）：那是段落末和弦的
+    # **收束手势**，不是基本节奏型。放进基础模板候选会让全曲基调变成一个收尾动作
+    # （实测：抒情歌的 verse/outro 整段被 cadence 占满），恰恰与「全曲统一到一两个
+    # 基本节奏型」的目标相反。收束手势属于「点缀」，本函数只负责定基调。
+    pool = [
+        p for p in _default_source.patterns()
+        if p.time_signature == ts and not p.positions
+    ]
+    if not pool:
+        pool = [p for p in _default_source.patterns() if not p.positions]
+    if not pool:
+        pool = list(_default_source.patterns())
+    if not pool:
+        return [
+            _instantiate_event(c, b, _boom_chick_fallback(ts), None)
+            for c, b in progression
+        ]
+
+    voicings = [_resolve_voicing(c, fretboard, stretch) for c, _ in progression]
+    muted = [_voicing_muted(v, fretboard) for v in voicings]
+
+    def mean_cost(pat: StrumPattern, idxs: Sequence[int]) -> float:
+        """``pat`` 在给定和弦下标集合上的平均代价；空集为 ``inf``。
+
+        全曲统一选型不逐和弦看邻居（``density_neighbor_delta=None``）——连贯性
+        由「全曲就这几个模板」这一结构性约束保证，不再需要逐和弦的密度方向项。
+        """
+        if not idxs:
+            return float("inf")
+        return sum(
+            pattern_cost(
+                pat,
+                beats=beats_of[i],
+                muted=muted[i],
+                density_neighbor_delta=None,
+                ctx=ctxs[i],
+            )
+            for i in idxs
+        ) / len(idxs)
+
+    all_idx = list(range(n))
+
+    fam_pool: dict[str, list[StrumPattern]] = {_FAMILY_PLUCK: [], _FAMILY_STRUM: []}
+    for p in pool:
+        fam_pool[_technique_family(p)].append(p)
+    fam_pool = {f: ps for f, ps in fam_pool.items() if ps}
+    if not fam_pool:
+        fallback = _boom_chick_fallback(ts)
+        return [
+            _instantiate_event(c, b, fallback, voicings[i])
+            for i, (c, b) in enumerate(progression)
+        ]
+
+    # 段落分组（保持出现顺序，保证结果确定）。
+    sections_in_order: list[str] = []
+    idxs_by_section: dict[str, list[int]] = {}
+    for i in all_idx:
+        sec = ctxs[i].effective_section
+        if sec not in idxs_by_section:
+            idxs_by_section[sec] = []
+            sections_in_order.append(sec)
+        idxs_by_section[sec].append(i)
+
+    def pick_short(fam: str, idxs: Sequence[int]) -> StrumPattern | None:
+        """族内 ``min_beats==1`` 的模板中，在 ``idxs`` 上平均代价最低者。
+
+        ``min_beats==1`` 保证它放得进任何拍数，是「基础模板放不下的短和弦」的
+        兜底。族内若无此类模板（数据源不全）返回 ``None``。
+        """
+        cands = [p for p in fam_pool[fam] if p.min_beats <= 1]
+        if not cands or not idxs:
+            return None
+        return min(cands, key=lambda p: (mean_cost(p, idxs), p.name))
+
+    # ── 1. 裁技法族：在某段落里与最优族差距不超过 W_FAMILY_MARGIN 即保留 ──
+    # fam_section_cost[fam][sec] = 该族在该段落里最好的模板分（代表该族在此的上限）。
+    fam_section_cost: dict[str, dict[str, float]] = {}
+    for fam, cands in fam_pool.items():
+        per_sec: dict[str, float] = {}
+        for sec, idxs in idxs_by_section.items():
+            # 只看能覆盖该段落至少一个和弦的模板（min_beats 硬门槛）。
+            per_sec[sec] = min(
+                (
+                    mean_cost(p, [i for i in idxs if beats_of[i] >= p.min_beats])
+                    for p in cands
+                    if any(beats_of[i] >= p.min_beats for i in idxs)
+                ),
+                default=float("inf"),
+            )
+        fam_section_cost[fam] = per_sec
+
+    def best_sec_gap(fam: str) -> float:
+        """该族相对逐段最优族的**最小**落后幅度（即它最拿手的段落差多少）。
+
+        保留判据看这个值而非最差段落：两个基本节奏型本就是分工的——主歌该分解、
+        副歌该扫弦，扫弦族在主歌落后、分解族在副歌落后都是**正常**的。只要某族
+        在**某个**段落里能追平最优族（gap <= ``W_FAMILY_MARGIN``），它就值得保留
+        （那个段落用它）。反之，抒情歌里扫弦族在**每个**段落都大幅落后拨弦族，
+        最小 gap 也超阈值 -> 整族裁掉，全曲只剩一个分解模板。
+        """
+        gaps = []
+        for sec in sections_in_order:
+            best = min(
+                (c.get(sec, float("inf")) for c in fam_section_cost.values()),
+                default=float("inf"),
+            )
+            gaps.append(fam_section_cost[fam].get(sec, float("inf")) - best)
+        return min(gaps, default=float("inf"))
+
+    kept = [f for f in fam_section_cost if best_sec_gap(f) <= W_FAMILY_MARGIN]
+    if not kept:
+        # 保底：全族都不达标时留最拿手段落差距最小的一族。
+        kept = [min(fam_section_cost, key=lambda f: (best_sec_gap(f), f))]
+
+    # 族数上限：超出时按最拿手段落差距裁掉较差的族（确定性排序）。
+    if len(kept) > max_families:
+        kept.sort(key=lambda f: (best_sec_gap(f), f))
+        kept = kept[:max_families]
+
+    # ── 2. 段落选族：段落决定用两个基本节奏型里的哪一个 ──
+    section_family: dict[str, str] = {
+        sec: min(kept, key=lambda f: (fam_section_cost[f].get(sec, float("inf")), f))
+        for sec in sections_in_order
+    }
+    # 该族实际要弹的和弦（其被分配到的段落的全部和弦）。基础模板只在这些和弦上
+    # 评分——在族根本用不到的段落上评分，会把基础模板拽向别处的口味（实测：副歌
+    # 扫弦族的基础模板被主歌和弦拖成 verse 向的 folk D-DU）。
+    fam_idx: dict[str, list[int]] = {f: [] for f in kept}
+    for sec, fam in section_family.items():
+        fam_idx[fam].extend(idxs_by_section[sec])
+
+    # ── 3. 基础模板 + 短模板：族内按「实际要弹的和弦」选 ──
+    base_of: dict[str, StrumPattern] = {}
+    short_of: dict[str, StrumPattern] = {}
+    for fam in kept:
+        idxs = fam_idx[fam]
+        cands = fam_pool[fam]
+        short = pick_short(fam, idxs)
+
+        def base_score(p: StrumPattern, idxs=idxs, short=short) -> float:
+            covered = [i for i in idxs if beats_of[i] >= p.min_beats]
+            if not covered:
+                return float("inf")
+            score = mean_cost(p, covered)
+            missing = [i for i in idxs if beats_of[i] < p.min_beats]
+            if missing and short is not None:
+                # 放不下的和弦按短模板计分，再按缺口比例吃 W_SHORT_FALLBACK——
+                # 覆盖越全的基础模板越占优，全曲模板数因此更少。
+                fallback = mean_cost(short, missing)
+                score = (
+                    score * len(covered) + fallback * len(missing)
+                ) / len(idxs) + W_SHORT_FALLBACK * (len(missing) / len(idxs))
+            return score
+
+        base = min(cands, key=lambda p: (base_score(p), p.name))
+        base_of[fam] = base
+        # 短模板定稿：按基础模板实际覆盖不到的和弦重选，贴合它要顶替的那些和弦。
+        gap = [i for i in idxs if beats_of[i] < base.min_beats]
+        chosen = pick_short(fam, gap) if gap else None
+        if chosen is not None:
+            short_of[fam] = chosen
+
+    # ── 4. 逐和弦分配：段落选族，族内取基础模板，放不下退同族短模板 ──
+    events: list[RhythmEvent] = []
+    for i, (chord, beats) in enumerate(progression):
+        fam = section_family[ctxs[i].effective_section]
+        base = base_of[fam]
+        pat = base if beats >= base.min_beats else short_of.get(fam, base)
+        events.append(_instantiate_event(chord, beats, pat, voicings[i]))
     return events
 
 

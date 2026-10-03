@@ -579,6 +579,123 @@ def check_34(gtr) -> None:
     print("  断言通过: 3/4 拍号筛专属模板，同分母轻罚兜底，孪生指法跨拍号成对")
 
 
+def check_plan_song_rhythm(gtr) -> None:
+    """全曲统一选型 ``plan_song_rhythm``：一首歌收敛到 1-2 个基本节奏型。
+
+    验证四件事：
+
+    1. **种类受控**：整首多段落歌曲的模板种类 <= 2 × max_families（基础 + 短，
+       每族各一），且远少于逐和弦选型 ``arrange_progression`` 的种类数。
+    2. **抒情歌单族**：musicnn guitar/slow/soft 标签 + 低起音密度下扫弦族被裁掉，
+       全曲只剩拨弦族——「抒情歌连扫弦都不需要」。
+    3. **段落分配**：主歌走拨弦、副歌走扫弦（段落决定用两个基本节奏型里的哪一个）。
+    4. **短和弦兜底**：``beats < 基础模板 min_beats`` 的和弦退到同族短模板，
+       而不是另选一个新模板；全曲模板总数不因此膨胀。
+    """
+    print("\n=== 全曲统一选型 plan_song_rhythm ===")
+    from rhythm_pattern import SelectionContext, arrange_progression, plan_song_rhythm
+
+    # 一段跨主歌/副歌/尾奏的典型流行歌，和弦拍数含 4/2/6 三种。
+    SONG = [
+        ("verse", "verse", [("C", 4), ("G", 2), ("Am", 2), ("F", 4), ("C", 2), ("G", 2), ("F", 4), ("F", 2), ("G", 2)]),
+        ("chorus", "chorus", [("F", 4), ("G", 4), ("C", 6), ("Am", 2), ("F", 4), ("G", 2), ("C", 4), ("C", 2)]),
+        ("verse", "verse", [("C", 4), ("G", 2), ("Am", 2), ("F", 4), ("C", 2), ("G", 2), ("F", 4), ("F", 2), ("G", 2)]),
+        ("outro", "outro", [("C", 4), ("G", 4), ("F", 4), ("C", 4)]),
+    ]
+    POP_TAGS = {
+        "verse": (("guitar", 0.8), ("soft", 0.6), ("slow", 0.5)),
+        "chorus": (("pop", 0.7), ("drums", 0.65), ("fast", 0.6), ("loud", 0.5)),
+        "outro": (("guitar", 0.75), ("slow", 0.6), ("soft", 0.5)),
+    }
+    POP_ONSET = {"verse": 0.42, "chorus": 0.70, "outro": 0.32}
+
+    def _build(tags_of, onset_of, bpm=92):
+        prog, ctxs = [], []
+        for _label, sec, chords in SONG:
+            for c, b in chords:
+                prog.append((c, b))
+                ctxs.append(SelectionContext(
+                    section=sec, style="pop", bpm=bpm, time_signature=(4, 4),
+                    max_stretch=4, musicnn_tags=tags_of[sec], onset_density=onset_of[sec],
+                ))
+        return prog, ctxs
+
+    # ── 1. 种类受控 + 3. 段落分配（流行歌）──
+    prog, ctxs = _build(POP_TAGS, POP_ONSET)
+    base = SelectionContext(style="pop", bpm=92, time_signature=(4, 4), max_stretch=4)
+    planned = plan_song_rhythm(prog, gtr, ctx=base, chord_ctxs=ctxs)
+    assert len(planned) == len(prog), f"输出应与进行等长 {len(prog)}，实际 {len(planned)}"
+    names = {e.pattern.name for e in planned}
+    assert len(names) <= 4, (  # 2 族 × (基础 + 短)
+        f"全曲模板种类应 <= 4（2 族 × 基础/短），实际 {len(names)}: {names}"
+    )
+    # 对照组：旧路径的等价形态——按段落分组、每组各调一次 arrange_progression
+    # （后端 pipeline 的实际做法，见 segment_rhythm_pipeline_service）。同样输入下
+    # 它逐和弦 / 逐段落另选模板，种类数应明显多于全曲统一选型。
+    greedy_names: set[str] = set()
+    for _label, sec, chords in SONG:
+        sec_ctx = SelectionContext(
+            section=sec, style="pop", bpm=92, time_signature=(4, 4), max_stretch=4,
+            musicnn_tags=POP_TAGS[sec], onset_density=POP_ONSET[sec],
+        )
+        for e in arrange_progression(list(chords), gtr, ctx=sec_ctx):
+            greedy_names.add(e.pattern.name)
+    assert len(names) < len(greedy_names), (
+        f"全曲统一选型种类({len(names)})应少于逐段落选型({len(greedy_names)}): "
+        f"{sorted(names)} vs {sorted(greedy_names)}"
+    )
+    print(f"  流行歌 {len(prog)} 和弦: 全曲统一 {len(names)} 种 {sorted(names)}"
+          f"  vs 逐段落 {len(greedy_names)} 种 {sorted(greedy_names)}")
+
+    # 段落分配：主歌拨弦、副歌扫弦。
+    fams = {
+        "verse": {e.pattern.is_strum for e, (_, sec, _) in zip(planned, _iter_ctx_sec(SONG)) if sec == "verse"},
+        "chorus": {e.pattern.is_strum for e, (_, sec, _) in zip(planned, _iter_ctx_sec(SONG)) if sec == "chorus"},
+    }
+    assert fams["verse"] == {False}, f"主歌应为拨弦（分解），实际 is_strum={fams['verse']}"
+    assert fams["chorus"] == {True}, f"副歌应为扫弦，实际 is_strum={fams['chorus']}"
+    per_sec: dict[str, set[str]] = {"verse": set(), "chorus": set()}
+    for e, (_l, sec, _c) in zip(planned, _iter_ctx_sec(SONG)):
+        if sec in per_sec:
+            per_sec[sec].add(e.pattern.name)
+    print(f"  段落分配: 主歌 -> 拨弦 {sorted(per_sec['verse'])}"
+          f"; 副歌 -> 扫弦 {sorted(per_sec['chorus'])}")
+
+    # ── 2. 抒情歌：只剩拨弦族 ──
+    BALLAD_TAGS = {sec: (("guitar", 0.85), ("slow", 0.75), ("soft", 0.7), ("classical", 0.5)) for sec in POP_TAGS}
+    BALLAD_ONSET = {sec: 0.32 for sec in POP_TAGS}
+    prog_b, ctxs_b = _build(BALLAD_TAGS, BALLAD_ONSET, bpm=72)
+    base_b = SelectionContext(style="pop", bpm=72, time_signature=(4, 4), max_stretch=4)
+    ballad = plan_song_rhythm(prog_b, gtr, ctx=base_b, chord_ctxs=ctxs_b)
+    assert all(not e.pattern.is_strum for e in ballad), (
+        "抒情歌（guitar/slow/soft 标签 + 低起音密度）应全程分解，实际混入扫弦: "
+        f"{sorted({e.pattern.name for e in ballad if e.pattern.is_strum})}"
+    )
+    ballad_names = {e.pattern.name for e in ballad}
+    assert len(ballad_names) <= 2, f"抒情歌应只留 1-2 个分解模板，实际 {ballad_names}"
+    print(f"  抒情歌 {len(prog_b)} 和弦: {len(ballad_names)} 种（全拨弦）{sorted(ballad_names)}")
+
+    # ── 4. 短和弦兜底：基础模板放不下的和弦退同族短模板 ──
+    # 上例含 2 拍和弦（基础 4 拍分解放不下），应退到同族 min_beats=1 的短模板。
+    short_used = {e.pattern.name for e in planned if e.pattern.min_beats <= 1}
+    assert short_used, "含 2 拍和弦的歌曲应触发短模板兜底"
+    print(f"  短和弦兜底模板: {sorted(short_used)}")
+
+    # ── max_families=1：强制单族 ──
+    one = plan_song_rhythm(prog, gtr, ctx=base, chord_ctxs=ctxs, max_families=1)
+    assert len({e.pattern.name for e in one}) <= 2, "max_families=1 时全曲应只剩一族（基础+短）"
+    print(f"  max_families=1 -> {sorted({e.pattern.name for e in one})}")
+
+    print("  断言通过: 全曲收敛到 1-2 个基本节奏型；抒情歌单族；短和弦同族兜底")
+
+
+def _iter_ctx_sec(song):
+    """按 SONG 结构展开每个和弦的 (label, section, chord)，供断言里对齐 section。"""
+    for label, sec, chords in song:
+        for c, b in chords:
+            yield label, sec, (c, b)
+
+
 def main() -> None:
     gtr = Fretboard.guitar()
 
@@ -590,6 +707,7 @@ def main() -> None:
     check_string_roles(gtr)
     check_selection_context(gtr)
     check_arrange_progression(gtr)
+    check_plan_song_rhythm(gtr)
     check_68(gtr)
     check_34(gtr)
 
