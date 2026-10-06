@@ -477,7 +477,15 @@ STRUM_PATTERNS: list[StrumPattern] = [
         motif_beats=2,
         min_beats=2,
         ideal_beats=(2, 4),
-        sections=("verse", "bridge"),
+        # ★ 退出 verse，只留 bridge。本模板与 `6/8 532132 (8分)` 是近乎孪生的一对：
+        #   同拍号、同技法、同 tags、同 motif_beats/min_beats、sections 也重叠——打分
+        #   能分出胜负的只剩 ideal_beats（本模板 (2,4) vs 它的 (2,)）和 BPM 维度对
+        #   高密度模板的罚分（密度 6 vs 4 个起音）。全曲统一选型里「分解族基础模板」
+        #   一首歌只定一次，这一线之差会传给整首歌：实测成都，bpm 折成附点拍速率
+        #   （÷3）时 532132 胜；把八分速率的 182 原样传进库时本模板胜，于是主歌整段
+        #   从 5-3-2-1-3-2 变成「根-五-顶两弦-五」（四分-八分-四分-八分，没有可连的
+        #   八分，看不出两个复合拍）。主歌位让给 532132，本模板退到 bridge 当另一种色彩。
+        sections=("bridge",),
         style="folk",
         technique="fingerpicking",
         time_signature=(6, 8),
@@ -546,7 +554,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         style="folk",
         technique="fingerpicking",
         time_signature=(3, 4),
-        tags=("guitar", "slow", "classical", "waltz"),
+        tags=("guitar", "slow", "soft", "classical", "waltz"),
     ),
     StrumPattern(
         name="6/8 532132 (8分)",
@@ -570,7 +578,7 @@ STRUM_PATTERNS: list[StrumPattern] = [
         style="folk",
         technique="fingerpicking",
         time_signature=(6, 8),
-        tags=("guitar", "slow", "classical"),
+        tags=("guitar", "slow", "soft", "classical"),
     ),
     StrumPattern(
         name="3/4 waltz D-D-DU",

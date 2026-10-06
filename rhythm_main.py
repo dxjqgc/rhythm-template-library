@@ -495,6 +495,17 @@ def check_68(gtr) -> None:
         + str([e.pattern.time_signature for e in arranged])
     )
     print(f"  编排 4 和弦 -> {[e.pattern.name for e in arranged]} (全 6/8)")
+
+    # 5. 主歌模板的 tags 必须带 soft —— 6/8 抒情分解在 musicnn 出 soft 标签的主歌里
+    #    会被"风格匹配"扣分。6/8 532132 (8分) 曾漏标 soft：其它三个主歌 6/8 模板
+    #    (folk D-DU / root-5-top / cadence / roll) 全都有，只有它没有，于是同一语境下
+    #    比 root-5-top 贵 1.25，抒情歌主歌永远选不上它。
+    verse_targets = [p for p in p68 if "verse" in p.sections]
+    assert verse_targets, "6/8 库应有主歌模板"
+    for p in verse_targets:
+        assert "soft" in p.tags, f"6/8 主歌模板 {p.name} 的 tags 缺 soft: {p.tags}"
+    print(f"  {len(verse_targets)} 个 6/8 主歌模板均带 soft: {[p.name for p in verse_targets]}")
+
     print("  断言通过: 6/8 拍号筛专属模板，栅格按附点拍对齐，重音标注强弱")
 
 
