@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .model import Cell, Pluck, Rest, Stroke, StrumPattern
-from .string_role import All, Fifth, Root, Seventh, StringRole, Third, TopN
+from .string_role import All, Fifth, FromTop, Root, Seventh, StringRole, Third, TopN
 
 if TYPE_CHECKING:
     pass
@@ -59,6 +59,8 @@ def _role_to_dict(role: StringRole | None) -> dict | None:
         return {"kind": kind, "region": role.region}
     if isinstance(role, TopN):
         return {"kind": "topn", "n": role.n, "span": role.span}
+    if isinstance(role, FromTop):
+        return {"kind": "from_top", "k": role.k}
     if isinstance(role, All):
         return {"kind": "all"}
     raise TypeError(f"不可序列化的弦角色类型: {type(role).__name__}")
@@ -90,6 +92,11 @@ def _role_from_dict(d: dict | None) -> StringRole | None:
         if span not in _VALID_SPANS:
             raise ValueError(f"非法 span 值: {span!r}")
         return TopN(n, span)
+    if kind == "from_top":
+        k = d.get("k")
+        if not isinstance(k, int) or isinstance(k, bool) or k < 1:
+            raise ValueError(f"非法 from_top k 值: {k!r}")
+        return FromTop(k)
     if kind == "all":
         return All()
     raise ValueError(f"未知的弦角色 kind: {kind!r}")

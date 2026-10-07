@@ -19,7 +19,7 @@
 返回要拨的弦号下标（``0`` = 最低音弦，与 ``chord_fingering`` 一致）。解析失败
 （voicing 里没该音级、或音距约束无法满足）时返回 ``None``，由调用方决定降级。
 
-角色原语三类：
+角色原语四类：
 
 1. **音级**：``Root`` / ``Third`` / ``Fifth`` / ``Seventh``，可带音区修饰
    ``region``（``"bass"`` 取最低音区出现 / ``"treble"`` 取最高音区 / ``"avoid_bass"``
@@ -27,10 +27,25 @@
 2. **弦组**：``TopN(n, span)`` 取最高 N 根发音弦，``span`` 约束「组内最低音-组外最低
    发音弦」的音距落在舒适区间（``"comfortable"``/``"narrow"``/``None``）。
    对应「21 vs 32」的动态选择。
-3. **全拨**：``All()`` 拨全部发音弦（相当于用拨的方式扫，用于和弦音同时呈现）。
+3. **音区弦位**：``FromTop(k)`` 取第 k 高的发音弦（``k=1`` 即最高音弦）。
+   对应「3-2-1」这类**固定弦形**分解--见下「弦形模板用 FromTop 而非音级」。
+4. **全拨**：``All()`` 拨全部发音弦（相当于用拨的方式扫，用于和弦音同时呈现）。
 
 音距用半音数衡量（基于真实音高 midi，非弦号距离），调弦中立。舒适区间阈值见
 ``_COMFORTABLE_SPAN``，可按风格调整。
+
+弦形模板用 FromTop 而非音级
+--------------------------
+音级角色适合「意图是音级」的模板（``root-5-top2``：根音→五音→顶两弦，换和弦换
+音级是设计目的）。但 ``53231323`` 这类**有名字的固定指法**，不变量是**弦形**
+（低音弦 + 高音三弦按 3-2-3-1-3-2-3 走），不是音级序--音级序会随 voicing 变：
+
+- C（x32010）3/2/1 弦 = G/C/E = 五音/根音/三音 → 音级序 R-5-R-5-3-5-R-5；
+- E（022100）3/2/1 弦 = G#/B/E = 三音/五音/根音 → 音级序 R-3-5-3-R-3-5-3。
+
+按 C 的音级序写死模板，到 E 上「五音」会被解析成 5 弦 2 品的 B2（E 的最低五音），
+八个音里四个落在 5 弦低音区，整条分解塌到 6/5 两弦。用 ``FromTop`` 写弦形则 C 得
+``5-3-2-3-1-3-2-3``、E 得 ``6-3-2-3-1-3-2-3``（正是 63231323），G/A/Am/F/Bm 同理。
 """
 
 from __future__ import annotations
@@ -293,6 +308,29 @@ class TopN(StringRole):
             if lo <= span <= hi:
                 return cand
         return None
+
+
+@dataclass(frozen=True)
+class FromTop(StringRole):
+    """第 k 高的发音弦（``k=1`` = 最高音弦，``k=2`` = 次高音弦，依此类推）。
+
+    用于表达**固定弦形**的分解指法（``53231323`` 的 ``3-2-1`` 三个高音位）。与
+    :class:`TopN` 同一套排序口径（按真实音高 midi 升序），故在标准调弦的常规 voicing
+    上「第 k 高音弦」与「第 k 高的那根弦」重合；两者在非常规 voicing 下若分叉，以音高
+    为准（与 ``TopN`` 一致，调弦中立）。
+
+    发音弦不足 k 根时返回 ``None``（调用方保留 ``strings=None``，不阻塞输出）。
+    """
+
+    k: int
+
+    def resolve(self, voicing: Voicing) -> tuple[int, ...] | None:
+        if self.k < 1:
+            return None
+        sounding = sorted(voicing.midi, key=lambda sm: sm[1])  # 按音高升序
+        if len(sounding) < self.k:
+            return None
+        return (sounding[-self.k][0],)
 
 
 @dataclass(frozen=True)

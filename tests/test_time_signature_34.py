@@ -109,7 +109,12 @@ class TestTwin532132:
             assert seq == [1, 3, 4, 5, 3, 4], (p.name, seq)
 
     def test_twin_instantiation_remaps_on_G(self, guitar):
-        """孪生对换和弦自动重映射（G 上根音移到 6 弦，弦角色对调弦中立的设计意图）。"""
+        """孪生对换和弦自动重映射（G 上根音移到 6 弦，高音三弦位不变）。
+
+        弦形角色（FromTop）下 G 与 C 只差低音弦：C = 5-3-2-1-3-2、G = 6-3-2-1-3-2。
+        旧版按音级写死（root/fifth/root(treble)/third(treble)/fifth/root(treble)）在 G 上
+        解析成 6-4-1-3-4-1（五音落 4 弦、高八度根音跳 1 弦），弦形与 C 不一致。
+        """
         from rhythm_pattern.strum_patterns import instantiate_pattern
 
         for p, beats in (
@@ -118,7 +123,7 @@ class TestTwin532132:
         ):
             ev = instantiate_pattern(p, "G", guitar, beats)
             seq = [c.strings[0] for c in ev.grid.cells if getattr(c, "strings", None)]
-            assert seq == [0, 2, 5, 4, 2, 5], (p.name, seq)  # 6-4-1-3-4-1 弦
+            assert seq == [0, 3, 4, 5, 3, 4], (p.name, seq)  # 6-3-2-1-3-2 弦
             assert None not in seq
 
     def test_34_accent_marks_beat_heads(self):

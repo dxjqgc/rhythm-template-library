@@ -16,7 +16,7 @@ from rhythm_pattern.serialization import (
     pattern_to_dict,
     seed_from_hardcoded,
 )
-from rhythm_pattern.string_role import All, Fifth, Root, Seventh, Third, TopN
+from rhythm_pattern.string_role import All, Fifth, FromTop, Root, Seventh, Third, TopN
 
 
 # ── 往返 ─────────────────────────────────────────────────────────────
@@ -42,11 +42,11 @@ def test_role_variants_roundtrip():
         Pluck(role=TopN(2), duration=1),
         Pluck(role=TopN(2, "comfortable"), duration=1),
         Pluck(role=TopN(2, "narrow"), duration=1),
+        Pluck(role=FromTop(1), duration=1),
+        Pluck(role=FromTop(3), duration=1),
         Pluck(role=All(), duration=1),
         Pluck(role=None, duration=1),
         Stroke("D", 1),
-        Rest(1),
-        Rest(1),
         Rest(1),
     ]
     pat = StrumPattern(

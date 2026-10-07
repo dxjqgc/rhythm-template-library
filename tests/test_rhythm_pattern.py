@@ -536,6 +536,68 @@ class TestStringRoles:
                if isinstance(c, Pluck) and c.strings]
         assert seq == [5, 3, 2, 3, 1, 3, 2, 3], f"实际 {seq}"
 
+    @pytest.mark.parametrize(
+        "chord,want",
+        [
+            ("C", [5, 3, 2, 3, 1, 3, 2, 3]),   # 经典 53231323
+            ("E", [6, 3, 2, 3, 1, 3, 2, 3]),   # 经典 63231323（根音在 6 弦）
+            ("D", [4, 3, 2, 3, 1, 3, 2, 3]),   # 经典 43231323
+            ("Am", [5, 3, 2, 3, 1, 3, 2, 3]),
+            ("G", [6, 3, 2, 3, 1, 3, 2, 3]),
+            ("F", [6, 3, 2, 3, 1, 3, 2, 3]),
+            ("Em", [6, 3, 2, 3, 1, 3, 2, 3]),
+        ],
+    )
+    def test_53231323_keeps_string_shape_across_chords(self, guitar, chord, want):
+        """53231323 的不变量是**弦形**：低音弦随和弦走，高音三弦位 3-2-3-1-3-2-3 恒定。
+
+        回归：曾按 C 的音级序写死（root/fifth/root(treble)/fifth/...），到 E（022100）
+        上「五音」被解析成 5 弦 2 品的 B2，八个音里四个落在 5 弦低音区，整条分解塌到
+        6/5 两弦（6-5-1-5-3-5-1-5）。改用 FromTop 弦形角色后 E 得 63231323。
+        """
+        tpl = next(p for p in STRUM_PATTERNS if p.name == "53231323 (16分)")
+        grid = self._instantiate(guitar, tpl, chord, 2)
+        seq = [self._gtr(c.strings)[0] for c in grid.cells
+               if isinstance(c, Pluck) and c.strings]
+        assert seq == want, f"{chord} 实际 {seq}"
+
+    def test_from_top_picks_kth_highest_sounding_string(self, guitar):
+        """FromTop(k) 取第 k 高的发音弦；发音弦不足 k 根时解析失败。"""
+        from rhythm_pattern import FromTop
+        v = self._voicing(guitar, "C")  # x32010，发音弦 5..1 弦
+        sounding = sorted(v.midi, key=lambda sm: sm[1])  # 按音高升序
+        assert FromTop(1).resolve(v) == (sounding[-1][0],)
+        assert FromTop(3).resolve(v) == (sounding[-3][0],)
+        assert FromTop(5).resolve(v) == (sounding[0][0],)  # 5 根发音弦，第 5 高 = 最低
+        assert FromTop(6).resolve(v) is None  # 只有 5 根发音弦
+        assert FromTop(0).resolve(v) is None  # k 从 1 起
+
+    @pytest.mark.parametrize(
+        "name,beats,want",
+        [
+            ("53231323 (16分)", 2, "53231323"),
+            ("53231323 (8分)", 4, "53231323"),
+            ("5323 (8分)", 2, "5323"),
+            ("3/4 532132 (8分)", 3, "532132"),
+            ("6/8 532132 (8分)", 2, "532132"),
+        ],
+    )
+    def test_named_shape_template_renders_its_name(self, guitar, name, beats, want):
+        """模板名承诺的弦序 = 动机实际渲染出的弦序（C 上即字面数字）。
+
+        回归：`5323 (8分)` 曾只写 2 个 Pluck（Root + 一个高音位），动机平铺出来是
+        5-3-5-3-5-3——两根弦来回拨，与模板名承诺的 5323 完全不符。名字带数字弦形的
+        模板必须逐音写满，少一个音就会被平铺放大成错误的循环。
+        """
+        tpl = next(p for p in STRUM_PATTERNS if p.name == name)
+        grid = self._instantiate(guitar, tpl, "C", beats)
+        seq = "".join(
+            str(self._gtr(c.strings)[0])
+            for c in grid.cells
+            if isinstance(c, Pluck) and c.strings
+        )
+        assert seq == want, f"{name} 动机渲染 {seq}，名字承诺 {want}"
+
     def test_topn_returns_multiple_strings(self, guitar):
         """TopN(2) 实例化后 Pluck.strings 长度为 2（一次拨多根弦）。"""
         from rhythm_pattern import TopN

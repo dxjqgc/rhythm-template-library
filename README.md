@@ -140,9 +140,12 @@ uv run rhythm-web                       # 或 uv run python -m web_manager.serve
 
 - `Root()` / `Third()` / `Fifth()` / `Seventh()` — 按音级，可选 `region`（`bass`/`treble`/`avoid_bass`）约束音区
 - `TopN(n, span)` — 顶 n 根弦，`span` 取 `comfortable`/`narrow` 控制顶底音距
+- `FromTop(k)` — 第 k 高的发音弦（`k=1` 即最高音弦），用于**固定弦形**的分解指法
 - `All()` — 拨全部发音弦（「拨弦版扫弦」）
 
-选型时按当前和弦首选 voicing 调 `role.resolve(voicing)` 实例化成具体弦号填入 `Pluck.strings`。换和弦/换调弦自动重映射，故同一模板 `53231323` 在 C 上实例化出 `5-3-2-3-1-3-2-3`、在 G 上自动换成根音更低的弦序。
+选型时按当前和弦首选 voicing 调 `role.resolve(voicing)` 实例化成具体弦号填入 `Pluck.strings`。
+
+**音级 vs 弦形**：`53231323` 这类有名字的固定指法，不变量是**弦形**（低音弦 + 高音三弦按 `3-2-3-1-3-2-3` 走），不是音级序——音级序随 voicing 变：C（x32010）的 3/2/1 弦是 `五音/根音/三音`，E（022100）的 3/2/1 弦是 `三音/五音/根音`。按 C 的音级序写死，到 E 上「五音」会被解析成 5 弦 2 品的 B2（E 的最低五音），整条分解塌到 6/5 两弦。故弦形模板用 `FromTop`：C 得 `5-3-2-3-1-3-2-3`、E 得 `6-3-2-3-1-3-2-3`（即 `63231323`）、D 得 `43231323`。音级角色仍用于「意图就是音级」的模板（如 `root-5-top2`）。
 
 ### 指法枚举的两种排序模型
 
@@ -168,7 +171,7 @@ rhythm_pattern/           # 核心：节奏型模板库 + 选型器
   model.py                # 数据模型：Stroke/Pluck/Rest/RhythmGrid/StrumPattern/FingeringAction
   strum_patterns.py       # 模板库 STRUM_PATTERNS + 选型器 + arrange_progression
                           #   + plan_song_rhythm（全曲统一选型）+ SelectionContext
-  string_role.py          # 弦角色：Root/Third/Fifth/Seventh/TopN/All（按 voicing 实例化弦号）
+  string_role.py          # 弦角色：Root/Third/Fifth/Seventh/TopN/FromTop/All（按 voicing 实例化弦号）
   serialization.py        # JSON 模板仓库 TemplateRepository + 旧格式迁移工具
   data/templates.json     # 模板数据库（14 个初始模板，由硬编码库 seed）
 chord_fingering/          # 基础库：和弦指法枚举与可演奏性评分

@@ -194,7 +194,8 @@ def check_string_roles(gtr) -> None:
     核心回归「5,3,21」：C 和弦根音在 5 弦、顶两弦选 2-1（顶音距合适、丰富）；
     G 和弦根音在 6 弦更低、顶两弦改选 3-2 收窄顶底音距、避免尖锐。同一套弦角色
     (Root→Fifth(avoid_bass)→TopN(2,comfortable)) 在不同和弦上解析出不同弦号，
-    证明弦序随和弦走、调弦中立。同时验证 53231323 的音级角色映射。
+    证明弦序随和弦走、调弦中立。同时验证 53231323 的**弦形**角色（FromTop）映射：
+    低音弦随和弦走（C=5 弦、E=6 弦、D=4 弦），高音三弦位 3-2-3-1-3-2-3 恒定。
     """
     print("\n=== 弦角色实例化 ===")
     from rhythm_pattern import Pluck, STRUM_PATTERNS
@@ -220,17 +221,45 @@ def check_string_roles(gtr) -> None:
         )
         print(f"  {chord}: Root={root} Fifth={fifth} TopN(2,comfortable)={top2}  OK")
 
-    # 53231323 在 C 上应实例化出 5-3-2-3-1-3-2-3 的弦序（音级角色映射）。
+    # 53231323 的弦形：低音弦 + 高音三弦 3-2-3-1-3-2-3。同一套 FromTop 角色在不同
+    # voicing 上解析出不同弦号，但**弦形不变**——C 得 5 起、E 得 6 起。
     tpl5323 = next(p for p in STRUM_PATTERNS if p.name == "53231323 (16分)")
-    v_c = _resolve_voicing("C", gtr, max_stretch=4)
-    grid_c = _instantiate_plucks(tpl5323.grid_for(2), v_c)
-    seq = [gtr_strings(c.strings)[0] for c in grid_c.cells
-           if isinstance(c, Pluck) and c.strings]
-    assert seq == [5, 3, 2, 3, 1, 3, 2, 3], (
-        f"C 上 53231323 弦序应为 [5,3,2,3,1,3,2,3]，实际 {seq}"
-    )
-    print(f"  C: 53231323 -> {seq}  OK (音级角色还原经典指法)")
-    print("  断言通过: 弦角色按 voicing 实例化，C 选 21 / G 选 32 自适应")
+    cases5323 = {
+        # 和弦: (低音弦号, 完整弦序)
+        "C": (5, [5, 3, 2, 3, 1, 3, 2, 3]),   # 经典 53231323
+        "E": (6, [6, 3, 2, 3, 1, 3, 2, 3]),   # 经典 63231323（E 根音在 6 弦）
+        "D": (4, [4, 3, 2, 3, 1, 3, 2, 3]),   # 经典 43231323
+        "Am": (5, [5, 3, 2, 3, 1, 3, 2, 3]),
+        "G": (6, [6, 3, 2, 3, 1, 3, 2, 3]),
+    }
+    for chord, (_, want) in cases5323.items():
+        v = _resolve_voicing(chord, gtr, max_stretch=4)
+        grid = _instantiate_plucks(tpl5323.grid_for(2), v)
+        seq = [gtr_strings(c.strings)[0] for c in grid.cells
+               if isinstance(c, Pluck) and c.strings]
+        assert seq == want, f"{chord} 上 53231323 弦序应为 {want}，实际 {seq}"
+        print(f"  {chord}: 53231323 -> {seq}  OK")
+    print("  断言通过: 弦形分解按 voicing 换低音弦，高音三弦位 3-2-3-1-3-2-3 不变")
+
+    # 名字带数字弦形的模板，动机渲染出的弦序必须等于名字本身（C 上即字面数字）。
+    # 回归：`5323 (8分)` 曾只写 2 个音，平铺出来是 5-3-5-3——两根弦来回拨。
+    for name, beats, want in (
+        ("53231323 (16分)", 2, "53231323"),
+        ("53231323 (8分)", 4, "53231323"),
+        ("5323 (8分)", 2, "5323"),
+        ("3/4 532132 (8分)", 3, "532132"),
+        ("6/8 532132 (8分)", 2, "532132"),
+    ):
+        tpl = next(p for p in STRUM_PATTERNS if p.name == name)
+        v = _resolve_voicing("C", gtr, max_stretch=4)
+        grid = _instantiate_plucks(tpl.grid_for(beats), v)
+        seq = "".join(
+            str(gtr_strings(c.strings)[0]) for c in grid.cells
+            if isinstance(c, Pluck) and c.strings
+        )
+        assert seq == want, f"{name} 动机渲染 {seq}，名字承诺 {want}"
+        print(f"  {name}: 动机 -> {seq}  OK")
+    print("  断言通过: 名字带数字弦形的模板逐音写满，动机渲染 = 名字")
 
 
 def check_selection_context(gtr) -> None:

@@ -56,6 +56,7 @@ from .model import Cell, Pluck, Position, Rest, RhythmEvent, RhythmGrid, Stroke,
 from .string_role import (
     All,
     Fifth,
+    FromTop,
     Root,
     Seventh,
     Third,
@@ -301,14 +302,17 @@ STRUM_PATTERNS: list[StrumPattern] = [
     StrumPattern(
         name="53231323 (16分)",
         # 经典民谣分解 5-3-2-3-1-3-2-3，8 个音各占 1 个 16 分位置 = 2 拍动机。
-        # C 和弦 x32010 各弦音级：5弦C=根音、4弦E=三音、3弦G=五音、2弦C=根音(高八度)、
-        # 1弦E=三音(高八度)。故 5-3-2-3-1-3-2-3 = root-fifth-root(treble)-fifth-
-        # third(treble)-fifth-root(treble)-fifth。音级角色随和弦走，换和弦自动映射弦号。
+        # ★ 弦形模板：不变量是**弦形**（低音弦 + 高音三弦按 3-2-3-1-3-2-3 走），不是
+        #   音级序。音级序会随 voicing 变：C（x32010）3/2/1 弦 = G/C/E = 五音/根音/三音，
+        #   E（022100）3/2/1 弦 = G#/B/E = 三音/五音/根音。按 C 的音级序写死（旧版
+        #   Root/Fifth/Root(treble)/Fifth/...），到 E 上「五音」被解析成 5 弦 2 品的
+        #   B2（E 的最低五音），八个音里四个落在 5 弦低音区，整条分解塌到 6/5 两弦。
+        #   用 FromTop 写弦形：C 得 5-3-2-3-1-3-2-3、E 得 6-3-2-3-1-3-2-3（即 63231323）。
         grid_motif=(
-            Pluck(role=Root(), duration=1), Pluck(role=Fifth(), duration=1),
-            Pluck(role=Root("treble"), duration=1), Pluck(role=Fifth(), duration=1),
-            Pluck(role=Third("treble"), duration=1), Pluck(role=Fifth(), duration=1),
-            Pluck(role=Root("treble"), duration=1), Pluck(role=Fifth(), duration=1),
+            Pluck(role=Root(), duration=1), Pluck(role=FromTop(3), duration=1),
+            Pluck(role=FromTop(2), duration=1), Pluck(role=FromTop(3), duration=1),
+            Pluck(role=FromTop(1), duration=1), Pluck(role=FromTop(3), duration=1),
+            Pluck(role=FromTop(2), duration=1), Pluck(role=FromTop(3), duration=1),
         ),
         motif_beats=2,
         min_beats=2,
@@ -322,12 +326,12 @@ STRUM_PATTERNS: list[StrumPattern] = [
         name="53231323 (8分)",
         # 同一指法 5-3-2-3-1-3-2-3 的 8 分版：8 个音各占 8 分（2 个 16 分位置）= 4 拍动机。
         # 比 16 分版舒缓，适合慢板抒情段落。每个 Pluck 持续 8 分。
-        # 音级角色同 16 分版（见上）。
+        # 弦形角色同 16 分版（见上）。
         grid_motif=(
-            Pluck(role=Root(), duration=2), Pluck(role=Fifth(), duration=2),
-            Pluck(role=Root("treble"), duration=2), Pluck(role=Fifth(), duration=2),
-            Pluck(role=Third("treble"), duration=2), Pluck(role=Fifth(), duration=2),
-            Pluck(role=Root("treble"), duration=2), Pluck(role=Fifth(), duration=2),
+            Pluck(role=Root(), duration=2), Pluck(role=FromTop(3), duration=2),
+            Pluck(role=FromTop(2), duration=2), Pluck(role=FromTop(3), duration=2),
+            Pluck(role=FromTop(1), duration=2), Pluck(role=FromTop(3), duration=2),
+            Pluck(role=FromTop(2), duration=2), Pluck(role=FromTop(3), duration=2),
         ),
         motif_beats=4,
         min_beats=4,
@@ -339,14 +343,19 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="5323 (8分)",
-        # 53231323 的前半截 5-3-2-3，4 个音各占 8 分 = 1 拍动机，循环两遍即 5323-5323。
-        # 适合拍数不定的短和弦或快段落的分解。
+        # 53231323 的前半截 5-3-2-3，4 个音各占 8 分 = 2 拍动机（4×2 tick = 8）；
+        # 循环即 5323-5323。适合 2 拍及以上的短和弦或快段落的分解。
+        # ★ 必须写满 4 个音：只写 2 个音（Root + 一个高音位）时 `grid_for` 平铺出来的
+        #   是 5-3-5-3-5-3——两根弦来回拨，与模板名承诺的 5323 完全不符（用户实测）。
+        #   min_beats 随 motif_beats 为 2（模型不变量 min_beats ≥ motif_beats）；1 拍槽位
+        #   的分解兜底交给 root-5-top2 (1拍)，那里没有缺口。
         grid_motif=(
-            Pluck(role=Root(), duration=2), Pluck(role=Fifth(), duration=2),
+            Pluck(role=Root(), duration=2), Pluck(role=FromTop(3), duration=2),
+            Pluck(role=FromTop(2), duration=2), Pluck(role=FromTop(3), duration=2),
         ),
-        motif_beats=1,
-        min_beats=1,
-        ideal_beats=(1, 2, 4),
+        motif_beats=2,
+        min_beats=2,
+        ideal_beats=(2, 4),
         sections=("verse", "prechorus"),
         style="folk",
         technique="fingerpicking",
@@ -538,14 +547,15 @@ STRUM_PATTERNS: list[StrumPattern] = [
         # 3 拍动机（1 小节）分解：5弦根-3弦五-2弦根-1弦三-3弦五-2弦根，六个 8 分
         # 填满一小节（6×2 tick = 12 tick）。指法 532132 是 4/4 经典 53231323 的
         # 三拍子近亲——每个「拍点」位置（第 1/3/5 个 8 分）各一次换弦推进，
-        # 强拍落根音。角色随和弦 voicing 实例化，与 53231323 同构。
+        # 强拍落根音。弦形角色与 53231323 同构（低音弦 + 高音三弦 3-2-1 序），
+        # 不按音级写——音级序随 voicing 变（见 53231323 (16分) 的说明）。
         grid_motif=(
             Pluck(role=Root(), duration=2, accent="strong"),
-            Pluck(role=Fifth(), duration=2),
-            Pluck(role=Root("treble"), duration=2, accent="weak"),
-            Pluck(role=Third("treble"), duration=2),
-            Pluck(role=Fifth(), duration=2, accent="weak"),
-            Pluck(role=Root("treble"), duration=2),
+            Pluck(role=FromTop(3), duration=2),
+            Pluck(role=FromTop(2), duration=2, accent="weak"),
+            Pluck(role=FromTop(1), duration=2),
+            Pluck(role=FromTop(3), duration=2, accent="weak"),
+            Pluck(role=FromTop(2), duration=2),
         ),
         motif_beats=3,
         min_beats=3,
@@ -558,18 +568,18 @@ STRUM_PATTERNS: list[StrumPattern] = [
     ),
     StrumPattern(
         name="6/8 532132 (8分)",
-        # 上面 3/4 532132 的 6/8 孪生：同指法（六弦序 5-3-2-1-3-2）、同角色序，但
+        # 上面 3/4 532132 的 6/8 孪生：同指法（六弦序 5-3-2-1-3-2）、同弦形角色序，但
         # 编码在 6/8 栅格上（一附点拍 3 tick，6 个 8 分 = 2 附点拍 = 1 小节）。
         # 「强-弱-弱 | 强-弱-弱」两组附点律动 vs 3/4 的均分三拍：同一手指肌肉记忆，
         # 两种拍号各自编码（模板 time_signature 单值，跨拍号兼容靠孪生对）。
         # accent 分组：第 1/4 音为两组组头（strong），组内余音弱。
         grid_motif=(
             Pluck(role=Root(), duration=1, accent="strong"),
-            Pluck(role=Fifth(), duration=1),
-            Pluck(role=Root("treble"), duration=1),
-            Pluck(role=Third("treble"), duration=1, accent="weak"),
-            Pluck(role=Fifth(), duration=1),
-            Pluck(role=Root("treble"), duration=1),
+            Pluck(role=FromTop(3), duration=1),
+            Pluck(role=FromTop(2), duration=1),
+            Pluck(role=FromTop(1), duration=1, accent="weak"),
+            Pluck(role=FromTop(3), duration=1),
+            Pluck(role=FromTop(2), duration=1),
         ),
         motif_beats=2,
         min_beats=2,

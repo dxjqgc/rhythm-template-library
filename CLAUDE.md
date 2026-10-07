@@ -61,7 +61,11 @@ uv run python -m rhythm_pattern.serialization --migrate-legacy  # 旧 None 格 D
 
 ### 弦角色对调弦中立（`rhythm_pattern/string_role.py`）
 
-分解模板用 `string_role`（`Root`/`Third`/`Fifth`/`Seventh`/`TopN`/`All`）表达「拨哪根弦」的**意图**而非固定弦号。选型时按当前和弦首选 voicing 调 `role.resolve(voicing)` 实例化成具体弦号填入 `Pluck.strings`。换和弦/换调弦自动重映射（同一模板在 C 上 `5-3-2-3-1-3-2-3`、在 G 上自动换弦序）。
+分解模板用 `string_role`（`Root`/`Third`/`Fifth`/`Seventh`/`TopN`/`FromTop`/`All`）表达「拨哪根弦」的**意图**而非固定弦号。选型时按当前和弦首选 voicing 调 `role.resolve(voicing)` 实例化成具体弦号填入 `Pluck.strings`。换和弦/换调弦自动重映射。
+
+**音级角色 vs 弦形角色（重要）**：音级序（`Root/Fifth/...`）**不随和弦保持不变**——同一段弦序在不同 voicing 上对应的音级序不同。`53231323` 的不变量是**弦形**（低音弦 + 高音三弦 `3-2-3-1-3-2-3`）：C（x32010）3/2/1 弦 = 五音/根音/三音，E（022100）3/2/1 弦 = 三音/五音/根音。按 C 的音级序写死模板，到 E 上「五音」被解析成 5 弦 2 品的 B2，八个音四个落在低音区，整条分解塌到 6/5 两弦。故 `53231323`/`5323`/`532132`（3/4、6/8）一律用 `FromTop(k)`（第 k 高的发音弦）写弦形：C→`5-3-2-3-1-3-2-3`、E→`6-3-2-3-1-3-2-3`、D→`43231323`。音级角色保留给「意图就是音级」的模板（`root-5-top2`、`arpeggio cadence` 等）。加新分解模板时先问：这个指法的不变量是弦形还是音级？
+
+**名字承诺的音数必须逐音写满**：`grid_for` 会把动机平铺成整段，动机里少写一个音会被放大成错误的循环。`5323 (8分)` 曾只写 2 个 Pluck（`Root` + 一个高音位），动机 1 拍、平铺出来是 `5-3-5-3-5-3`——两根弦来回拨，与模板名承诺的 `5323` 完全不符（用户实测发现）。名字带数字弦形的模板（`5323*`/`532132*`/`53231323*`）必须逐音写满 4/6/8 个 Pluck，且 `motif_beats` = 音数 × 时值 ÷ `ticks_per_beat`（`5323` 四个八分 = 2 拍，故 `motif_beats=2`、`min_beats≥2`——模型不变量 `min_beats ≥ motif_beats`）。回归见 `test_named_shape_template_renders_its_name` 与 `rhythm_main.py::check_string_roles`。
 
 ### 指法枚举两种排序（`chord_fingering/`）
 

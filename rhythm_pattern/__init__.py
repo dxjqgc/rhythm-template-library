@@ -61,6 +61,7 @@ from .serialization import (
 from .string_role import (
     All,
     Fifth,
+    FromTop,
     Root,
     Seventh,
     StringRole,
@@ -106,6 +107,7 @@ __all__ = [
     "Fifth",
     "Seventh",
     "TopN",
+    "FromTop",
     "All",
     "VoicingData",
     "voicing_from_fingering",

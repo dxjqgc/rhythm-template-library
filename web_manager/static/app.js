@@ -203,7 +203,7 @@ function makeRoleEl(cell) {
   const role = cell.role || (cell.role = { kind: "root", region: null });
 
   const kindSel = document.createElement("select");
-  for (const k of [...ROLE_KINDS_DEGREE, "topn", "all"]) {
+  for (const k of [...ROLE_KINDS_DEGREE, "topn", "from_top", "all"]) {
     const o = document.createElement("option"); o.value = k; o.textContent = k;
     if (role && role.kind === k) o.selected = true;
     kindSel.appendChild(o);
@@ -212,6 +212,7 @@ function makeRoleEl(cell) {
     const k = kindSel.value;
     if (ROLE_KINDS_DEGREE.includes(k)) cell.role = { kind: k, region: null };
     else if (k === "topn") cell.role = { kind: "topn", n: 2, span: null };
+    else if (k === "from_top") cell.role = { kind: "from_top", k: 1 };
     else cell.role = { kind: "all" };
     paintGrid();
   };
@@ -240,6 +241,13 @@ function makeRoleEl(cell) {
       }
       sSel.onchange = () => { role.span = sSel.value || null; };
       wrap.appendChild(sSel);
+    } else if (role.kind === "from_top") {
+      // 第 k 高的发音弦（k=1 最高音弦）。用于 53231323 这类固定弦形分解。
+      const kInp = document.createElement("input"); kInp.type = "number"; kInp.min = 1; kInp.max = 6; kInp.value = role.k || 1;
+      kInp.style.width = "40px";
+      kInp.title = "第 k 高的发音弦（1 = 最高音弦）";
+      kInp.onchange = () => { role.k = parseInt(kInp.value, 10) || 1; };
+      wrap.appendChild(kInp);
     }
   }
   return wrap;
