@@ -205,6 +205,8 @@ def check_string_roles(gtr) -> None:
     (Root→Fifth(avoid_bass)→TopN(2,comfortable)) 在不同和弦上解析出不同弦号，
     证明弦序随和弦走、调弦中立。同时验证 53231323 的**弦形**角色（FromTop）映射：
     低音弦随和弦走（C=5 弦、E=6 弦、D=4 弦），高音三弦位 3-2-3-1-3-2-3 恒定。
+    另验证斜杠转位（`"G/B"` 等）的默认 voicing 低音就是斜杠低音，Root() 随之
+    落在低音弦上（旧行为：与 `"G"` 同形，低音还是 G）。
     """
 
     print("\n=== 弦角色实例化 ===")
@@ -247,6 +249,28 @@ def check_string_roles(gtr) -> None:
         assert seq == want, f"{chord} 上 53231323 弦序应为 {want}，实际 {seq}"
         print(f"  {chord}: 53231323 -> {seq}  OK")
     print("  断言通过: 弦形分解按 voicing 换低音弦，高音三弦位 3-2-3-1-3-2-3 不变")
+
+    # 斜杠转位：默认 voicing 的低音必须就是斜杠低音。回归「谱面标 G/B、指法和
+    # 实际发声都是原位 G」——pytheory 不把斜杠低音当约束（`G/B` 与 `G` 的音级集合
+    # 相同、`root` 仍是 G），约束由 chord_fingering.enumerate_fingerings 里的
+    # slash_bass_pc 施加；弦角色以最低发音音为基准解析，故 Root() 落在低音弦上
+    # （拇指拨的正是斜杠低音）。
+    for symbol, bass_pc in (("G/B", 11), ("C/E", 4), ("D/F#", 6), ("Am/C", 0)):
+        v = _resolve_voicing(symbol, gtr, max_stretch=4)
+        assert v is not None, f"{symbol} 应有默认 voicing"
+        low_pc = min(m for _, m in v.midi) % 12
+        assert low_pc == bass_pc, (
+            f"{symbol} 默认 voicing 低音 pc={low_pc}，期望 {bass_pc}（positions={v.positions}）"
+        )
+        grid = _instantiate_plucks(tpl.grid_for(1), v)
+        root_strings = gtr_strings(next(c.strings for c in grid.cells
+                                        if isinstance(c, Pluck) and c.strings))
+        lowest_string = 6 - min(i for i, p in enumerate(v.positions) if p is not None)
+        assert root_strings[0] == lowest_string, (
+            f"{symbol} Root() 应落在最低发音弦（斜杠低音），实际 {root_strings}"
+        )
+        print(f"  {symbol}: voicing={v.positions} 低音弦={lowest_string}  OK")
+    print("  断言通过: 斜杠转位低音进默认 voicing")
 
     # 名字带数字弦形的模板，动机渲染出的弦序必须等于名字本身（C 上即字面数字）。
     # 回归：`5323 (8分)` 曾只写 2 个音，平铺出来是 5-3-5-3——两根弦来回拨。

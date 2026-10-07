@@ -15,6 +15,7 @@ from .fingering_enumerator import (
     is_redundant_thumb,
     rank_key,
     score_fingering,
+    slash_bass_pc,
 )
 from .playability import (
     FingerPlan,
@@ -30,6 +31,7 @@ __all__ = [
     "is_redundant_thumb",
     "rank_key",
     "score_fingering",
+    "slash_bass_pc",
     "FingerPlan",
     "count_muted",
     "plan_fingers",

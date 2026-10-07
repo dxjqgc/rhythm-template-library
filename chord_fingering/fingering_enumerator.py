@@ -13,6 +13,7 @@ pytheory 内置的 ``Fretboard.chord(name)`` 只返回标准调弦下的一个�
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from itertools import product
 from typing import TYPE_CHECKING, Literal
@@ -25,12 +26,65 @@ if TYPE_CHECKING:
     from pytheory import Chord, Fingering, Fretboard, Tone
 
 
-__all__ = ["enumerate_fingerings", "score_fingering", "rank_key", "analyze_barre", "is_redundant_thumb"]
+__all__ = [
+    "enumerate_fingerings",
+    "score_fingering",
+    "rank_key",
+    "analyze_barre",
+    "is_redundant_thumb",
+    "slash_bass_pc",
+]
 
 
 def _pitch_class(tone: "Tone") -> int:
     """音高类（0..11）。pytheory 的 Tone 没有 pitch_class 属性，用 midi 折算。"""
     return tone.midi % 12
+
+
+# 斜杠转位的低音名：只取音名开头（字母 + 可选 #/b），与后端
+# ``chord_normalizer._ROOT_RE`` 同一口径——`"G/B"` / `"Gmaj/B"` / `"G:maj/Bb"`
+# 都解析出 `/B`、`/Bb`；多写的修饰（如 `/B7`）只取音名部分。
+_BASS_ROOT_RE = re.compile(r"^([A-G][#b]?)")
+
+_PC_BY_NAME = {
+    "C": 0, "C#": 1, "Db": 1, "D": 2, "D#": 3, "Eb": 3, "E": 4, "F": 5,
+    "F#": 6, "Gb": 6, "G": 7, "G#": 8, "Ab": 8, "A": 9, "A#": 10, "Bb": 10, "B": 11,
+}
+
+
+def slash_bass_pc(symbol: str) -> int | None:
+    """斜杠转位（``"G/B"``）里低音的音高类；无斜杠或低音解析不出时返回 ``None``。
+
+    为什么需要它：pytheory **不把斜杠低音当约束**——``Chord.from_symbol("G/B")``
+    的 ``pitch_classes`` 与 ``"G"`` 完全相同（B 本就是 G 大三和弦的成员音），只把
+    ``tones`` 的排列转了个位，``root`` 仍是 G。于是 ``"G/B"`` 能弹出的指法与
+    ``"G"`` 一模一样，而 :func:`playability.playability_cost` 还会因「最低音不是
+    根音」给转位形态加 ``W_INVERSION`` 罚分，排名第一必然是**低音为 G 的原位
+    G**（``320003``）——谱面和弦图标成 G/B、听起来却是 G 的根位。本函数把低音从
+    符号里捞出来，供 :func:`enumerate_fingerings` 施加硬约束。
+
+    低音本来就是和弦内音的斜杠和弦（``G/B``、``C/E``、``D/F#``）全部命中这个问题；
+    低音在和弦外的（``Am/G``）pytheory 会把该音并进 ``pitch_classes``，指法集合
+    本就不同，不受影响。
+    """
+    if "/" not in symbol:
+        return None
+    bass = symbol.split("/", 1)[1].strip()
+    match = _BASS_ROOT_RE.match(bass)
+    if not match:
+        return None
+    return _PC_BY_NAME.get(match.group(1))
+
+
+def _lowest_sounding_pc(fingering: "Fingering") -> int | None:
+    """指法实际发音中音高最低的那个音的音高类（无发音弦时 ``None``）。
+
+    用 ``min(tones, key=midi)`` 而非弦序，故自定义调弦（第 0 弦未必最低）同样成立。
+    """
+    tones = fingering.tones
+    if not tones:
+        return None
+    return _pitch_class(min(tones, key=lambda t: t.midi))
 
 
 def _fretted_positions(positions: Iterable[int | None]) -> list[int]:
@@ -261,6 +315,9 @@ def enumerate_fingerings(
     ----------
     chord
         和弦名（如 ``"C"``、``"Am7"``、``"F#maj7"``）或 ``pytheory.Chord`` 对象。
+        **斜杠转位**（``"G/B"``）会施加硬约束：只返回最低发音音就是该低音的指法
+        （见 :func:`slash_bass_pc` 与其在排序后的应用）；传 ``Chord`` 对象时
+        pytheory 已经丢掉了低音，无从约束。
     fretboard
         ``pytheory.Fretboard`` 实例，可为任意调弦（``Fretboard.guitar(tuning=...)``）。
     max_fret
@@ -294,7 +351,13 @@ def enumerate_fingerings(
         ``"legacy"`` 下按 :func:`rank_key` 分层排序。
     """
     if isinstance(chord, str):
+        # 斜杠转位（"G/B"）：pytheory 不把低音当约束，须自己捞出来做硬约束，
+        # 否则 "G/B" 与 "G" 的指法集合完全相同、排名第一还是原位 G。
+        bass_pc = slash_bass_pc(chord)
         chord = pytheory.Chord.from_symbol(chord)
+    else:
+        # 传 Chord 对象时无从得知斜杠低音（pytheory 也丢了它），不施加约束。
+        bass_pc = None
 
     target_pcs = set(chord.pitch_classes)
     root_pc = _pitch_class(chord.root) if chord.root is not None else None
@@ -390,6 +453,16 @@ def enumerate_fingerings(
         results = [f for _, f in scored]
     else:
         results.sort(key=lambda f: rank_key(f, root_pc=root_pc))
+
+    # 斜杠转位硬约束：只留最低发音音正好是该低音的指法。放在排序之后、limit 之前
+    # ——这样 limit=1 拿到的也是转位形态（不是被原位形态挤掉），且只在合格者之间
+    # 保持原有的可演奏性次序。一个合格者都没有时（如十一和弦家族确实没有带该低音
+    # 的可行 voicing）退回完整列表：宁可指法不转位，也不要返回空列表让调用方
+    # 退化成「无指法」。
+    if bass_pc is not None:
+        inversions = [f for f in results if _lowest_sounding_pc(f) == bass_pc]
+        if inversions:
+            results = inversions
 
     if limit is not None:
         results = results[:limit]

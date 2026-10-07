@@ -11,6 +11,7 @@ from chord_fingering import (
     is_redundant_thumb,
     rank_key,
     score_fingering,
+    slash_bass_pc,
 )
 from pytheory import Chord, Fretboard
 
@@ -270,3 +271,98 @@ class TestScoreFingering:
         assert score_with_root > score_without_root, (
             f"传入 root_pc 应增加原位加分: {score_with_root} vs {score_without_root}。"
         )
+
+
+# ── 斜杠转位：低音硬约束 ──────────────────────────────────────
+# pytheory 不把斜杠低音当约束（`G/B` 与 `G` 的音级集合完全相同，`root` 仍是 G），
+# 且 playability_cost 因「最低音不是根音」给转位形态加 W_INVERSION 罚分 —— 若不
+# 自己施加约束，`G/B` 排名第一必然低音为 G 的原位指法（谱面标 G/B、听起来是 G）。
+SLASH_CASES = [
+    # (斜杠符号, 低音音高类)
+    ("G/B", 11),
+    ("C/E", 4),
+    ("D/F#", 6),
+    ("Am/G", 7),
+    ("Am/C", 0),
+]
+
+
+class TestSlashBass:
+    """斜杠转位（`"G/B"`）的低音约束。"""
+
+    @pytest.mark.parametrize("symbol, bass_pc", SLASH_CASES)
+    def test_lowest_sounding_note_is_the_slash_bass(self, guitar, symbol, bass_pc):
+        """约束后：每个结果的最低发音音就是斜杠低音。"""
+        results = enumerate_fingerings(symbol, guitar, max_fret=7, max_stretch=4, limit=3)
+        assert results, f"{symbol} 应有转位指法。"
+        for f in results:
+            lowest_pc = min(t.midi for t in f.tones) % 12
+            assert lowest_pc == bass_pc, (
+                f"{symbol} 指法 {tuple(f.positions)} 最低音 pc={lowest_pc}，期望 {bass_pc}。"
+            )
+
+    def test_bass_tone_slash_does_not_mirror_root_position(self, guitar):
+        """核心回归：G/B 不再等于原位 G（旧行为两者逐位相同）。"""
+        plain = enumerate_fingerings("G", guitar, max_fret=7, max_stretch=4, limit=1)
+        slash = enumerate_fingerings("G/B", guitar, max_fret=7, max_stretch=4, limit=1)
+        assert tuple(slash[0].positions) != tuple(plain[0].positions)
+        assert tuple(plain[0].positions) == (3, 2, 0, 0, 0, 3), "原位 G 不受影响。"
+
+    def test_limit_applies_after_the_bass_constraint(self, guitar):
+        """limit=1 也必须拿到转位形态（约束在排序后、截断前施加）。"""
+        top = enumerate_fingerings("G/B", guitar, max_fret=7, max_stretch=4, limit=1)
+        assert min(t.midi for t in top[0].tones) % 12 == 11
+
+    def test_plain_symbols_unchanged(self, guitar):
+        """无斜杠标签行为逐位不变（教材基准指法仍排第一）。"""
+        expected = {
+            "G": (3, 2, 0, 0, 0, 3),
+            "C": (None, 3, 2, 0, 1, 0),
+            "F": (1, 3, 3, 2, 1, 1),
+            "Am": (None, 0, 2, 2, 1, 0),
+        }
+        for symbol, want in expected.items():
+            top = enumerate_fingerings(symbol, guitar, max_fret=7, max_stretch=4, limit=1)
+            assert tuple(top[0].positions) == want, f"{symbol} 首选指法变了。"
+
+    def test_falls_back_when_no_bass_matching_shape_exists(self, guitar):
+        """该低音确实没有可行 voicing 时退回完整列表（宁可不动，也不返回空）。"""
+        constrained = enumerate_fingerings("G/B", guitar, max_fret=1, max_stretch=4)
+        unconstrained = enumerate_fingerings(
+            Chord.from_symbol("G/B"), guitar, max_fret=1, max_stretch=4
+        )
+        assert constrained, "约束不该把结果清空。"
+        assert [tuple(f.positions) for f in constrained] == [
+            tuple(f.positions) for f in unconstrained
+        ]
+
+    def test_chord_object_has_no_bass_constraint(self, guitar):
+        """传 Chord 对象时低音已被 pytheory 丢掉，退回无约束行为。"""
+        by_object = enumerate_fingerings(
+            Chord.from_symbol("G/B"), guitar, max_fret=7, max_stretch=4, limit=1
+        )
+        by_plain = enumerate_fingerings("G", guitar, max_fret=7, max_stretch=4, limit=1)
+        assert tuple(by_object[0].positions) == tuple(by_plain[0].positions)
+
+
+class TestSlashBassParsing:
+    """`slash_bass_pc` 解析（colon / compact / 带修饰的写法）。"""
+
+    @pytest.mark.parametrize(
+        "symbol, want",
+        [
+            ("G/B", 11),
+            ("Gmaj/B", 11),
+            ("G:maj/Bb", 10),
+            ("C/E", 4),
+            ("D/F#", 6),
+            ("Am/G", 7),
+            ("G/B7", 11),      # 低音带修饰：只取音名
+            ("G", None),       # 无斜杠
+            ("Am", None),
+            ("N.C.", None),
+            ("G/", None),      # 空低音
+        ],
+    )
+    def test_parsing(self, symbol, want):
+        assert slash_bass_pc(symbol) == want
