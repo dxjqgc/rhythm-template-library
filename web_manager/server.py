@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -264,10 +265,15 @@ def main() -> None:
 
     repo = TemplateRepository(args.db)
     if not repo.path.exists():
-        from rhythm_pattern import seed_from_hardcoded
-
-        print(f"数据库不存在，先 seed 到 {repo.path}")
-        seed_from_hardcoded(repo.path)
+        # 模板的唯一真源就是这份 DB，没有可 seed 的硬编码备份。缺文件 = 部署问题，
+        # 直接拒绝启动并说清路径，别让管理器对着一个空库改。
+        print(
+            f"模板数据库不存在: {repo.path}\n"
+            f"（模板只存在于这份 JSON 里，无硬编码备份；从仓库恢复该文件，"
+            f"或用 --db 指向正确的库）",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
     srv = _Server(repo)
     httpd = _ServerHTTPServer((args.host, args.port), srv)

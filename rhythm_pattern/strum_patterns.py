@@ -1,10 +1,11 @@
 """扫弦节奏型模板库 + 选型器。
 
-模板库是一个普通列表常量 ``STRUM_PATTERNS``，每加一个模板往表里加一行即可，
-不必动选型器。选型器 :func:`enumerate_rhythm_patterns` 对进行里每个和弦，
-在其拍数 + 段落 + 风格约束下的可行扫弦模板集合里，按若干维度打连续代价分
-（越小越靠前，与 ``chord_fingering.playability_cost`` 思路一致）排序，输出
-一串 :class:`~rhythm_pattern.model.RhythmEvent`。
+模板**只**存在于文本数据库 ``rhythm_pattern/data/templates.json``（见
+:mod:`rhythm_pattern.serialization`），由 web 管理器增删改；代码里没有硬编码模板表。
+选型器 :func:`enumerate_rhythm_patterns` 对进行里每个和弦，在其拍数 + 段落 + 风格
+约束下的可行模板集合里，按若干维度打连续代价分（越小越靠前，与
+``chord_fingering.playability_cost`` 思路一致）排序，输出一串
+:class:`~rhythm_pattern.model.RhythmEvent`。
 
 选择因素抽象
 ------------
@@ -46,6 +47,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
@@ -53,25 +55,20 @@ from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 from chord_fingering import count_muted, enumerate_fingerings
 
 from .model import Cell, Pluck, Position, Rest, RhythmEvent, RhythmGrid, Stroke, StrumPattern
-from .string_role import (
-    All,
-    Fifth,
-    FromTop,
-    Root,
-    Seventh,
-    Third,
-    TopN,
-    VoicingData,
-    voicing_from_fingering,
-)
+from .string_role import VoicingData, voicing_from_fingering
 
 if TYPE_CHECKING:
     from pytheory import Fretboard
 
+    from .serialization import TemplateRepository
+
+_log = logging.getLogger(__name__)
+
 
 __all__ = [
-    "STRUM_PATTERNS",
     "PatternSource",
+    "ListPatternSource",
+    "DbPatternSource",
     "set_pattern_source",
     "get_pattern_source",
     "enumerate_rhythm_patterns",
@@ -189,519 +186,102 @@ class SelectionContext:
         return "pop" if self.style is None else self.style
 
 
-# --- 模板库 ---------------------------------------------------------------
-
-STRUM_PATTERNS: list[StrumPattern] = [
-    # ── 扫弦模板 ──────────────────────────────────────────────
-    StrumPattern(
-        name="boom-chick",
-        # 1 拍动机：下扫（根音区）持续一拍。最简的根-拍交替，民谣/乡村骨架。
-        grid_motif=(Stroke("D", 4),),
-        motif_beats=1,
-        min_beats=1,
-        ideal_beats=(2, 4),
-        sections=("verse",),
-        style="folk",
-        tags=("guitar", "country", "slow"),
-    ),
-    StrumPattern(
-        name="folk D-DU",
-        # 2 拍动机：第 1 拍「下」持续一拍，第 2 拍「下-上」（下 16 分 + 上 8 分）。完整 D.DU 周期。
-        grid_motif=(Stroke("D", 4), Stroke("D", 1), Stroke("U", 3)),
-        motif_beats=2,
-        min_beats=2,
-        ideal_beats=(2, 4),
-        sections=("verse", "prechorus"),
-        style="folk",
-        tags=("guitar", "country", "soft"),
-    ),
-    StrumPattern(
-        name="pop 8th-notes",
-        # 1 拍动机：下-上 8 分音符交替（下8分 + 上8分），流行副歌最常见。
-        # 8 分 = 每拍 2 个音，每音 duration=2（2 个 16 分位置 = 8 分）。名副其实。
-        grid_motif=(Stroke("D", 2), Stroke("U", 2)),
-        motif_beats=1,
-        min_beats=1,
-        ideal_beats=(1, 2, 4),
-        sections=("chorus", "prechorus"),
-        style="pop",
-        tags=("pop", "fast", "drums", "beat"),
-    ),
-    StrumPattern(
-        name="rock 8th down",
-        # 1 拍动机：下-下各 8 分，全下扫重拍，摇滚 power 思路。
-        grid_motif=(Stroke("D", 2), Stroke("D", 2)),
-        motif_beats=1,
-        min_beats=1,
-        ideal_beats=(1, 2, 4),
-        sections=("chorus",),
-        style="rock",
-        tags=("rock", "loud", "fast", "drums", "metal"),
-    ),
-    StrumPattern(
-        name="pop D-DU-U-DU",
-        # 经典 4/4 流行扫弦 ↓ ↓↑ ↑ ↓↑：4 拍一个完整周期动机。
-        # 每拍第 1 个 16 分为强拍下扫，弱拍加下扫/上扫回扫，构成「下 下上 上 下上」。
-        grid_motif=(
-            Stroke("D", 4),             # 1 拍：下
-            Stroke("D", 1), Stroke("U", 3),  # 2 拍：下-上
-            Stroke("U", 4),             # 3 拍：上
-            Stroke("D", 1), Stroke("U", 3),  # 4 拍：下-上
-        ),
-        motif_beats=4,
-        min_beats=4,
-        ideal_beats=(4,),
-        sections=("chorus",),
-        style="pop",
-        tags=("pop", "fast", "drums", "beat"),
-    ),
-    StrumPattern(
-        name="D-D-DU (1拍16分)",
-        # 「下 下下上」1 拍 16 分版：4 个动作挤在一拍内，节奏紧凑、推动力强，
-        # 常作副歌收束或过门。区别于 pop 8th-notes 的均匀 DUDU，这里第二拍密度更高。
-        grid_motif=(Stroke("D", 1), Stroke("D", 1), Stroke("D", 1), Stroke("U", 1)),
-        motif_beats=1,
-        min_beats=1,
-        ideal_beats=(1, 2),
-        sections=("chorus", "prechorus"),
-        style="pop",
-        tags=("pop", "fast", "loud", "drums"),
-    ),
-    StrumPattern(
-        name="reggae off-beat",
-        # 1 拍动机：休 16 分 + 上扫 8 分附点（持续到拍末），反拍上扫，雷鬼/Ska 慢扫。
-        grid_motif=(Rest(1), Stroke("U", 3)),
-        motif_beats=1,
-        min_beats=1,
-        ideal_beats=(1, 2),
-        sections=("chorus", "bridge"),
-        style="rock",
-        tags=("rock", "beat", "fast"),
-    ),
-    # ── 分解模板（Pluck 带 StringRole，选型时按 voicing 实例化弦号；technique="fingerpicking"）──
-    StrumPattern(
-        name="root-5-top2 (1拍)",
-        # 「5,3,21」式 1 拍动机：根音(16分)-五音(16分)-顶两弦同拨(16分)-休(16分)。
-        # 顶两弦用 TopN(2,'comfortable')，按 voicing 动态选：C 选 2-1 弦（顶音距合适、
-        # 丰富），G 根音在 6 弦更低，选 3-2 弦收窄顶底音距、避免尖锐。一次拨多根弦
-        # 靠 Pluck.strings 长度>1 表达。弦序随和弦走，固定弦号做不到。
-        grid_motif=(
-            Pluck(role=Root(), duration=1),
-            Pluck(role=Fifth("avoid_bass"), duration=1),
-            Pluck(role=TopN(2, "comfortable"), duration=1),
-            Rest(1),
-        ),
-        motif_beats=1,
-        min_beats=1,
-        ideal_beats=(1, 2, 4),
-        sections=("verse", "prechorus", "bridge"),
-        style="folk",
-        technique="fingerpicking",
-        tags=("guitar", "slow", "soft", "classical"),
-    ),
-    StrumPattern(
-        name="53231323 (16分)",
-        # 经典民谣分解 5-3-2-3-1-3-2-3，8 个音各占 1 个 16 分位置 = 2 拍动机。
-        # ★ 弦形模板：不变量是**弦形**（低音弦 + 高音三弦按 3-2-3-1-3-2-3 走），不是
-        #   音级序。音级序会随 voicing 变：C（x32010）3/2/1 弦 = G/C/E = 五音/根音/三音，
-        #   E（022100）3/2/1 弦 = G#/B/E = 三音/五音/根音。按 C 的音级序写死（旧版
-        #   Root/Fifth/Root(treble)/Fifth/...），到 E 上「五音」被解析成 5 弦 2 品的
-        #   B2（E 的最低五音），八个音里四个落在 5 弦低音区，整条分解塌到 6/5 两弦。
-        #   用 FromTop 写弦形：C 得 5-3-2-3-1-3-2-3、E 得 6-3-2-3-1-3-2-3（即 63231323）。
-        grid_motif=(
-            Pluck(role=Root(), duration=1), Pluck(role=FromTop(3), duration=1),
-            Pluck(role=FromTop(2), duration=1), Pluck(role=FromTop(3), duration=1),
-            Pluck(role=FromTop(1), duration=1), Pluck(role=FromTop(3), duration=1),
-            Pluck(role=FromTop(2), duration=1), Pluck(role=FromTop(3), duration=1),
-        ),
-        motif_beats=2,
-        min_beats=2,
-        ideal_beats=(2, 4),
-        sections=("verse", "prechorus", "bridge"),
-        style="folk",
-        technique="fingerpicking",
-        tags=("guitar", "slow", "classical"),
-    ),
-    StrumPattern(
-        name="53231323 (8分)",
-        # 同一指法 5-3-2-3-1-3-2-3 的 8 分版：8 个音各占 8 分（2 个 16 分位置）= 4 拍动机。
-        # 比 16 分版舒缓，适合慢板抒情段落。每个 Pluck 持续 8 分。
-        # 弦形角色同 16 分版（见上）。
-        grid_motif=(
-            Pluck(role=Root(), duration=2), Pluck(role=FromTop(3), duration=2),
-            Pluck(role=FromTop(2), duration=2), Pluck(role=FromTop(3), duration=2),
-            Pluck(role=FromTop(1), duration=2), Pluck(role=FromTop(3), duration=2),
-            Pluck(role=FromTop(2), duration=2), Pluck(role=FromTop(3), duration=2),
-        ),
-        motif_beats=4,
-        min_beats=4,
-        ideal_beats=(4,),
-        sections=("verse", "bridge"),
-        style="folk",
-        technique="fingerpicking",
-        tags=("guitar", "slow", "soft", "classical", "new age"),
-    ),
-    StrumPattern(
-        name="5323 (8分)",
-        # 53231323 的前半截 5-3-2-3，4 个音各占 8 分 = 2 拍动机（4×2 tick = 8）；
-        # 循环即 5323-5323。适合 2 拍及以上的短和弦或快段落的分解。
-        # ★ 必须写满 4 个音：只写 2 个音（Root + 一个高音位）时 `grid_for` 平铺出来的
-        #   是 5-3-5-3-5-3——两根弦来回拨，与模板名承诺的 5323 完全不符（用户实测）。
-        #   min_beats 随 motif_beats 为 2（模型不变量 min_beats ≥ motif_beats）；1 拍槽位
-        #   的分解兜底交给 root-5-top2 (1拍)，那里没有缺口。
-        grid_motif=(
-            Pluck(role=Root(), duration=2), Pluck(role=FromTop(3), duration=2),
-            Pluck(role=FromTop(2), duration=2), Pluck(role=FromTop(3), duration=2),
-        ),
-        motif_beats=2,
-        min_beats=2,
-        ideal_beats=(2, 4),
-        sections=("verse", "prechorus"),
-        style="folk",
-        technique="fingerpicking",
-        tags=("guitar", "slow", "soft"),
-    ),
-    StrumPattern(
-        name="arpeggio placeholder",
-        # 最简占位分解：1 拍拨一弦持续一拍。role=None 的 Pluck，弦序不指定，
-        # 兼作技法基线测试用（technique_baseline 切分解时兜底）。
-        grid_motif=(Pluck(role=None, duration=4),),
-        motif_beats=1,
-        min_beats=1,
-        ideal_beats=(2, 4),
-        sections=("verse", "prechorus", "bridge"),
-        style="folk",
-        technique="fingerpicking",
-        tags=("guitar", "slow", "soft", "classical", "ambient"),
-    ),
-    StrumPattern(
-        name="arpeggio cadence (tail)",
-        # 段落末和弦收束琶音：4 拍动机，低音->五音->三音->全拨收束。
-        # 每个音占 1 拍（4 个 16 分位置），舒缓收尾。
-        # 末拍用 All() 拨全部发音弦，相当于「拨弦版扫弦」做终止感。标 positions=("tail",)--
-        # 仅在段落末和弦 0 罚分，其他位置吃 W_POSITION 被压下。
-        grid_motif=(
-            Pluck(role=Root(), duration=4),
-            Pluck(role=Fifth("avoid_bass"), duration=4),
-            Pluck(role=Third(), duration=4),
-            Pluck(role=All(), duration=4),
-        ),
-        motif_beats=4,
-        min_beats=4,
-        ideal_beats=(4,),
-        sections=("verse", "bridge", "outro"),
-        style="folk",
-        technique="fingerpicking",
-        positions=("tail",),
-        tags=("guitar", "slow", "soft", "classical", "new age", "ambient"),
-    ),
-    StrumPattern(
-        name="arpeggio cadence short (tail)",
-        # 段落末和弦短收束琶音：2 拍动机，低音->五音->全拨->全拨收束。每个音占 8 分（2 个 16 分位置）。
-        # 补 4 拍版的缺口--段落尾和弦常是 2 拍甚至更短，4 拍 cadence 的 min_beats=4 进不了候选，
-        # 此版 min_beats=2 覆盖短尾和弦。末两拍 All() 拨全部弦做终止感。标 positions=("tail",)。
-        grid_motif=(
-            Pluck(role=Root(), duration=2), Pluck(role=Fifth("avoid_bass"), duration=2),
-            Pluck(role=All(), duration=2), Pluck(role=All(), duration=2),
-        ),
-        motif_beats=2,
-        min_beats=2,
-        ideal_beats=(2, 4),
-        sections=("verse", "bridge", "outro"),
-        style="folk",
-        technique="fingerpicking",
-        positions=("tail",),
-        tags=("guitar", "slow", "soft", "classical"),
-    ),
-    StrumPattern(
-        name="arpeggio roll (tail)",
-        # 真琶音收束：1 拍动机，All() 一次拨全部发音弦、音持续整拍。渲染为波浪箭头
-        # （alphaTab ArpeggioDown/Up），MIDI 里逐弦微错开发声。technique="arpeggio"
-        # 与分解（fingerpicking）区分：分解逐弦拨出完整律动，琶音是「一串音快速依次
-        # 拨出」的单次动作。标 positions=("tail",)——段落尾和弦的典型收束手势。
-        grid_motif=(Pluck(role=All(), duration=4, accent="strong"),),
-        motif_beats=1,
-        min_beats=1,
-        ideal_beats=(1, 2, 4),
-        sections=("verse", "bridge", "outro"),
-        style="folk",
-        technique="arpeggio",
-        positions=("tail",),
-        tags=("guitar", "slow", "soft", "classical"),
-    ),
-
-    # ── 6/8 拍号模板（附点 8 分拍，一小节 2 拍 = 6 tick，每附点拍 [强 弱 弱]）──
-    # time_signature=(6,8)：选型器据此在 6/8 歌曲里筛这些专属模板，4/4 模板吃
-    # W_TIME_SIG_MISMATCH 重罚让位。accent 标强/弱拍，试听映射 velocity 体现强弱分组。
-    StrumPattern(
-        name="6/8 folk D-DU",
-        # 2 拍动机（1 小节）：第 1 附点拍下扫（强）、第 2 附点拍上扫（弱）。最简 6/8 民谣扫弦，
-        # 一小节一下一上，对应 [D··][U··] 的附点律动。
-        grid_motif=(Stroke("D", 3, "strong"), Stroke("U", 3, "weak")),
-        motif_beats=2,
-        min_beats=2,
-        ideal_beats=(2, 4),
-        sections=("verse", "prechorus"),
-        style="folk",
-        time_signature=(6, 8),
-        tags=("guitar", "country", "soft", "slow"),
-    ),
-    StrumPattern(
-        name="6/8 pop D-·U-DU",
-        # 2 拍动机（1 小节）：第 1 附点拍下扫（强，3 tick）；第 2 附点拍「下(16分)+上(8分附点收)」，
-        # 第二拍前加 16 分下扫增加推动力，流行副歌 6/8 扫弦。对应 [D··][DU·]。
-        grid_motif=(Stroke("D", 3, "strong"), Stroke("D", 1), Stroke("U", 2, "weak")),
-        motif_beats=2,
-        min_beats=2,
-        ideal_beats=(2,),
-        sections=("chorus",),
-        style="pop",
-        time_signature=(6, 8),
-        tags=("pop", "fast", "drums", "beat"),
-    ),
-    StrumPattern(
-        name="6/8 rock dotted down",
-        # 1 拍动机（半小节，平铺 2 遍 = 1 小节）：每附点拍「下(2 tick 强)+下(1 tick)」，
-        # 摇滚 6/8 全下扫，对应 [DD·] 循环。min_beats=1 覆盖任意偶数拍 6/8 和弦。
-        grid_motif=(Stroke("D", 2, "strong"), Stroke("D", 1)),
-        motif_beats=1,
-        min_beats=1,
-        ideal_beats=(1, 2, 4),
-        sections=("chorus",),
-        style="rock",
-        time_signature=(6, 8),
-        tags=("rock", "loud", "fast", "drums", "metal"),
-    ),
-    StrumPattern(
-        name="6/8 arpeggio root-5-top",
-        # 2 拍动机（1 小节）分解：根音(2 tick 强)-五音(1 tick)-顶两弦(2 tick 弱)-五音(1 tick)。
-        # 经典 6/8 分解「根-五-顶-五」，对应 [Root· Fifth][Top2· Fifth] 的附点律动。
-        # 顶两弦用 TopN(2,'comfortable') 按 voicing 动态选，弦序随和弦走。
-        grid_motif=(
-            Pluck(role=Root(), duration=2, accent="strong"),
-            Pluck(role=Fifth("avoid_bass"), duration=1),
-            Pluck(role=TopN(2, "comfortable"), duration=2, accent="weak"),
-            Pluck(role=Fifth(), duration=1),
-        ),
-        motif_beats=2,
-        min_beats=2,
-        ideal_beats=(2, 4),
-        # ★ 退出 verse，只留 bridge。本模板与 `6/8 532132 (8分)` 是近乎孪生的一对：
-        #   同拍号、同技法、同 tags、同 motif_beats/min_beats、sections 也重叠——打分
-        #   能分出胜负的只剩 ideal_beats（本模板 (2,4) vs 它的 (2,)）和 BPM 维度对
-        #   高密度模板的罚分（密度 6 vs 4 个起音）。全曲统一选型里「分解族基础模板」
-        #   一首歌只定一次，这一线之差会传给整首歌：实测成都，bpm 折成附点拍速率
-        #   （÷3）时 532132 胜；把八分速率的 182 原样传进库时本模板胜，于是主歌整段
-        #   从 5-3-2-1-3-2 变成「根-五-顶两弦-五」（四分-八分-四分-八分，没有可连的
-        #   八分，看不出两个复合拍）。主歌位让给 532132，本模板退到 bridge 当另一种色彩。
-        sections=("bridge",),
-        style="folk",
-        technique="fingerpicking",
-        time_signature=(6, 8),
-        tags=("guitar", "slow", "soft", "classical"),
-    ),
-    StrumPattern(
-        name="6/8 arpeggio cadence (tail)",
-        # 2 拍动机收束琶音：根音(3 tick 强)→三音(3 tick 弱)，各占一附点拍，舒缓收尾。
-        # 标 positions=("tail")，段落末和弦 0 罚分、其他位置吃 W_POSITION 被压下（逐和弦
-        # 无位置信息时靠 W_POSITION 把它压在非 tail 位置，与 4/4 cadence 同机制）。
-        # ideal_beats=(2,4) 与 4/4 cadence short 一致——省 ideal 罚分，靠 positions 控 tail。
-        grid_motif=(
-            Pluck(role=Root(), duration=3, accent="strong"),
-            Pluck(role=Third(), duration=3, accent="weak"),
-        ),
-        motif_beats=2,
-        min_beats=2,
-        ideal_beats=(2, 4),
-        sections=("verse", "bridge", "outro"),
-        style="folk",
-        technique="fingerpicking",
-        positions=("tail",),
-        time_signature=(6, 8),
-        tags=("guitar", "slow", "soft", "classical", "new age"),
-    ),
-    StrumPattern(
-        name="6/8 arpeggio roll (tail)",
-        # 6/8 真琶音收束：1 附点拍动机，All() 拨全部发音弦、音持续整附点拍（3 tick）。
-        # 与 4/4 arpeggio roll 同构，technique="arpeggio"（真琶音，渲染波浪箭头），
-        # 标 positions=("tail",) 做段落尾收束手势。
-        grid_motif=(Pluck(role=All(), duration=3, accent="strong"),),
-        motif_beats=1,
-        min_beats=1,
-        ideal_beats=(1, 2),
-        sections=("verse", "bridge", "outro"),
-        style="folk",
-        technique="arpeggio",
-        positions=("tail",),
-        time_signature=(6, 8),
-        tags=("guitar", "slow", "soft", "classical"),
-    ),
-
-    # ── 3/4 拍号模板（8 分音符律动，一小节 3 拍 = 12 tick，强-弱-弱）──────────
-    # time_signature=(3,4)：选型器据此在 3/4 歌曲里优先这些专属模板；4/4 短模板可
-    # 作兜底（同分母吃 W_TIME_SIG_NUMERATOR 轻罚，见打分权重），/8 模板仍被
-    # W_TIME_SIG_MISMATCH 重罚拒掉。与 6/8 的「一哒哒、二哒哒」附点律动区分：
-    # 3/4 是均分三拍「强-弱-弱」，每拍 2 个 8 分。
-    StrumPattern(
-        name="3/4 532132 (8分)",
-        # 3 拍动机（1 小节）分解：5弦根-3弦五-2弦根-1弦三-3弦五-2弦根，六个 8 分
-        # 填满一小节（6×2 tick = 12 tick）。指法 532132 是 4/4 经典 53231323 的
-        # 三拍子近亲——每个「拍点」位置（第 1/3/5 个 8 分）各一次换弦推进，
-        # 强拍落根音。弦形角色与 53231323 同构（低音弦 + 高音三弦 3-2-1 序），
-        # 不按音级写——音级序随 voicing 变（见 53231323 (16分) 的说明）。
-        grid_motif=(
-            Pluck(role=Root(), duration=2, accent="strong"),
-            Pluck(role=FromTop(3), duration=2),
-            Pluck(role=FromTop(2), duration=2, accent="weak"),
-            Pluck(role=FromTop(1), duration=2),
-            Pluck(role=FromTop(3), duration=2, accent="weak"),
-            Pluck(role=FromTop(2), duration=2),
-        ),
-        motif_beats=3,
-        min_beats=3,
-        ideal_beats=(3,),
-        sections=("verse", "prechorus", "bridge"),
-        style="folk",
-        technique="fingerpicking",
-        time_signature=(3, 4),
-        tags=("guitar", "slow", "soft", "classical", "waltz"),
-    ),
-    StrumPattern(
-        name="6/8 532132 (8分)",
-        # 上面 3/4 532132 的 6/8 孪生：同指法（六弦序 5-3-2-1-3-2）、同弦形角色序，但
-        # 编码在 6/8 栅格上（一附点拍 3 tick，6 个 8 分 = 2 附点拍 = 1 小节）。
-        # 「强-弱-弱 | 强-弱-弱」两组附点律动 vs 3/4 的均分三拍：同一手指肌肉记忆，
-        # 两种拍号各自编码（模板 time_signature 单值，跨拍号兼容靠孪生对）。
-        # accent 分组：第 1/4 音为两组组头（strong），组内余音弱。
-        grid_motif=(
-            Pluck(role=Root(), duration=1, accent="strong"),
-            Pluck(role=FromTop(3), duration=1),
-            Pluck(role=FromTop(2), duration=1),
-            Pluck(role=FromTop(1), duration=1, accent="weak"),
-            Pluck(role=FromTop(3), duration=1),
-            Pluck(role=FromTop(2), duration=1),
-        ),
-        motif_beats=2,
-        min_beats=2,
-        ideal_beats=(2,),
-        sections=("verse", "prechorus", "bridge"),
-        style="folk",
-        technique="fingerpicking",
-        time_signature=(6, 8),
-        tags=("guitar", "slow", "soft", "classical"),
-    ),
-    StrumPattern(
-        name="3/4 waltz D-D-DU",
-        # 3 拍扫弦圆舞曲：强拍下扫、次强拍下扫、弱拍「下-上」收推动。对应每拍
-        # 2 个 8 分里的 [D·][D·][DU]。
-        grid_motif=(
-            Stroke("D", 4, "strong"),
-            Stroke("D", 4, "weak"),
-            Stroke("D", 2),
-            Stroke("U", 2, "weak"),
-        ),
-        motif_beats=3,
-        min_beats=3,
-        ideal_beats=(3,),
-        sections=("chorus", "verse"),
-        style="folk",
-        time_signature=(3, 4),
-        tags=("guitar", "country", "waltz", "soft"),
-    ),
-    StrumPattern(
-        name="3/4 boom-chick",
-        # 3/4 兜底节拍：每拍一记四分下扫，平铺 3 遍 = 一小节，均分三拍的最小骨架。
-        # 与 4/4 boom-chick 严格同构（单动作 1 拍动机、min_beats=1 平铺任意拍数），
-        # 仅显式声明 3/4 拍号——_boom_chick_fallback 的 min_beats=1 分支据此能取到
-        # 同拍号兜底，且无 4/4→3/4 跨分子的 W_TIME_SIG_NUMERATOR 轻罚。
-        # 兜底模板：退出 verse/prechorus（分解段落，532132 等更合适），无 tags
-        # （不靠 tag 匹配参与选型，只作 _boom_chick_fallback 用），避免在 guitar/slow
-        # 标签下抢过 532132 等分解模板。
-        grid_motif=(Stroke("D", 4, "strong"),),
-        motif_beats=1,
-        min_beats=1,
-        ideal_beats=(3,),
-        sections=("chorus", "bridge", "outro"),
-        style="folk",
-        time_signature=(3, 4),
-    ),
-    StrumPattern(
-        name="3/4 arpeggio cadence (tail)",
-        # 3 拍收束琶音：根音(4分 强)→三音(4分)→顶弦(4分 弱)，三音级进收尾。
-        # 标 positions=("tail",) 做段落末和弦收束，与 4/4/6/8 cadence 同机制。
-        grid_motif=(
-            Pluck(role=Root(), duration=4, accent="strong"),
-            Pluck(role=Third(), duration=4),
-            Pluck(role=TopN(2, "comfortable"), duration=4, accent="weak"),
-        ),
-        motif_beats=3,
-        min_beats=3,
-        ideal_beats=(3,),
-        sections=("verse", "bridge", "outro"),
-        style="folk",
-        technique="fingerpicking",
-        positions=("tail",),
-        time_signature=(3, 4),
-        tags=("guitar", "slow", "soft", "classical", "new age"),
-    ),
-]
-
-
-# --- 数据源 seam（可注入，默认硬编码）-----------------------------------
+# --- 数据源（模板的唯一真源：templates.json）-----------------------------
 #
-# 选型器不直接读模块级 STRUM_PATTERNS，而读一个「数据源」协议。默认源背靠硬编码列表
-# （集成项目无感），web 管理器启动时调 set_pattern_source 注入数据库源，使编辑后的模板
-# 立即生效。STRUM_PATTERNS 常量始终保留，作为兜底与未注入源时的默认行为。
+# 选型器不直接读文件，而读一个「数据源」协议。默认源是库内自带的
+# rhythm_pattern/data/templates.json（web 管理器的 CRUD 目标），每次 patterns() 都
+# 重新 load，故编辑即时生效。集成方/测试可用 set_pattern_source 注入自定义源。
+#
+# DB 缺失或损坏视为部署问题--不静默退回陈旧数据，异常照抛（后端据此把服务标为
+# unavailable，前端显示「节奏型服务不可用」）。唯一例外是**瞬时读错**：web 管理器
+# 写文件不是原子的，那一瞬可能读到半截 JSON，此时用上一次成功的内存快照顶一下。
 
 
 @runtime_checkable
 class PatternSource(Protocol):
-    """节奏型数据源协议：返回当前可用的模板列表。
-
-    默认实现背靠硬编码 :data:`STRUM_PATTERNS`；web 管理器提供数据库源实现注入。
-    """
+    """节奏型数据源协议：返回当前可用的模板列表。"""
 
     def patterns(self) -> list[StrumPattern]: ...
 
 
-class _ListPatternSource:
-    """背靠一个固定列表的数据源（默认实现）。"""
+class ListPatternSource:
+    """背靠一个固定列表的数据源（测试与嵌入方注入用）。"""
 
-    def __init__(self, patterns: list[StrumPattern]) -> None:
-        self._patterns = patterns
+    def __init__(self, patterns: Sequence[StrumPattern]) -> None:
+        self._patterns = list(patterns)
 
     def patterns(self) -> list[StrumPattern]:
-        return self._patterns
+        return list(self._patterns)
 
 
-# 进程级默认源。set_pattern_source 是全局状态，仅适用于单用户本地工具（如 web 管理器）。
-_default_source: PatternSource = _ListPatternSource(STRUM_PATTERNS)
+class DbPatternSource:
+    """背靠文本数据库的数据源（默认实现）。
+
+    ``patterns()`` 每次调用重新 ``load()``，所以 web 管理器的编辑下一次选型即生效。
+    读失败时返回上一次成功的内存快照（web 管理器非原子写入窗口里的半截 JSON 是唯一
+    现实成因）；从没成功读过（DB 缺失/损坏/非法记录）则异常照抛，由调用方判为服务
+    不可用。
+    """
+
+    def __init__(self, repo: TemplateRepository) -> None:
+        self._repo = repo
+        self._last_good: list[StrumPattern] | None = None
+
+    def patterns(self) -> list[StrumPattern]:
+        try:
+            loaded = [pattern for _id, pattern in self._repo.load()]
+        except Exception as exc:
+            if self._last_good is None:
+                raise
+            _log.warning(
+                "模板数据库读取失败（%s）；本次选型沿用上一次成功加载的 %d 个模板",
+                exc,
+                len(self._last_good),
+            )
+            return list(self._last_good)
+        self._last_good = loaded
+        return list(loaded)
+
+
+# 进程级当前源。None = 尚未取用/被重置，下次 get 时重建默认 DB 源。
+_default_source: PatternSource | None = None
+
+
+def _db_default_source() -> PatternSource:
+    """默认数据源：库内自带的 templates.json。"""
+    from .serialization import TemplateRepository
+
+    return DbPatternSource(TemplateRepository())
 
 
 def set_pattern_source(source: PatternSource | None) -> None:
-    """注入数据源。``None`` 重置为硬编码 :data:`STRUM_PATTERNS` 默认源。
+    """注入数据源。``None`` 重置为默认 DB 源（下次取用时重建）。
 
-    进程级全局状态：web 管理器在启动时调一次注入数据库源；普通集成项目无需调用，
-    自动用硬编码默认源，行为与改 seam 前完全一致。多进程并发安全不在范围内。
+    进程级全局状态，仅适用于单用户本地工具（如 web 管理器）。多进程并发安全不在
+    范围内；gunicorn 各 worker 各配一份，幂等。
     """
     global _default_source
-    _default_source = source if source is not None else _ListPatternSource(STRUM_PATTERNS)
+    _default_source = source
 
 
 def get_pattern_source() -> PatternSource:
-    """取当前数据源（主要用于测试与自省）。"""
+    """取当前数据源（默认：库内 templates.json）。"""
+    global _default_source
+    if _default_source is None:
+        _default_source = _db_default_source()
     return _default_source
 
 
 def _boom_chick_fallback(time_signature: tuple[int, int] = (4, 4)) -> StrumPattern:
-    """取兜底模板：优先同拍号的 boom-chick，缺失时退回硬编码列表，再缺失则内联构造，
-    保证总不崩。
+    """取兜底模板：优先同拍号的 boom-chick，缺失时取同拍号任意短模板，再缺失则内联构造。
 
     - 当前数据源有同拍号 boom-chick → 用之；
-    - 否则退回硬编码 :data:`STRUM_PATTERNS` 找同拍号 boom-chick；
-    - 若硬编码也没有该拍号 boom-chick（如 6/8），取同拍号任意 min_beats=1 模板；
-    - 若同拍号全无（极端），内联构造一个最小 4/4 boom-chick，绝不抛 ``StopIteration``
-      ——极端场景塞个错拍号模板总比崩好，兑现「保证总不崩」。
+    - 否则取同拍号任意 ``min_beats=1`` 模板；
+    - 若同拍号全无（DB 里没这个拍号的模板），内联构造一个最小 4/4 boom-chick，绝不抛
+      ``StopIteration``——极端场景塞个错拍号模板总比崩好。
+
+    注意本函数不吞数据源异常：DB 缺失/损坏时 ``patterns()`` 抛错应当冒泡（那是部署
+    问题，不是「没有候选」），由后端判为服务不可用。
     """
     def _find_in(source) -> StrumPattern | None:
         try:
@@ -709,10 +289,7 @@ def _boom_chick_fallback(time_signature: tuple[int, int] = (4, 4)) -> StrumPatte
         except StopIteration:
             return next((p for p in source if p.time_signature == time_signature and p.min_beats == 1), None)
 
-    found = _find_in(_default_source.patterns())
-    if found is not None:
-        return found
-    found = _find_in(STRUM_PATTERNS)
+    found = _find_in(get_pattern_source().patterns())
     if found is not None:
         return found
     # 同拍号全无：内联 4/4 boom-chick 兜底（极端，保不崩）。
@@ -1229,7 +806,7 @@ def enumerate_rhythm_patterns(
             events.append(_instantiate_event(chord, beats, fallback, voicings[i]))
             continue
 
-        # 稳定排序：代价相同时保持 STRUM_PATTERNS 里的顺序，结果确定。
+        # 稳定排序：代价相同时保持数据源里的模板顺序，结果确定。
         scored.sort(key=lambda pair: pair[0])
         if limit is not None:
             scored = scored[:limit]

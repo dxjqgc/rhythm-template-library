@@ -4,7 +4,8 @@
 模块后续集成到别的项目时，本 web 管理器可作为可丢弃的独立组件。
 
 职责：
-- :class:`DbPatternSource` —— 数据库源的 :class:`PatternSource` 实现，供选型器注入。
+- :class:`DbPatternSource` —— 数据库源的 :class:`PatternSource` 实现，供选型器注入
+  （实现在核心包 ``rhythm_pattern`` 里，这里只是原样转出，供管理器/测试同址引用）。
 - :func:`pattern_to_notelist` —— 把「模板 + 和弦 + 拍数 + BPM」展开成浏览器可合成的
   音符列表 JSON（按 16 分 tick 计时），是试听的核心数据契约。
 """
@@ -14,6 +15,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from rhythm_pattern import (
+    DbPatternSource,
     PatternSource,
     StrumPattern,
     TemplateRepository,
@@ -27,20 +29,6 @@ from rhythm_pattern.model import Pluck, Rest, RhythmEvent, Stroke
 
 if TYPE_CHECKING:
     from pytheory import Fretboard
-
-
-class DbPatternSource:
-    """数据库源的 :class:`PatternSource` 实现。
-
-    ``patterns()`` 从仓库加载全部模板，每条经 ``dict_to_pattern`` 构造校验。仓库
-    读到的非法记录会在 load 阶段抛错，不会进选型器。
-    """
-
-    def __init__(self, repo: TemplateRepository) -> None:
-        self._repo = repo
-
-    def patterns(self) -> list[StrumPattern]:
-        return [p for _id, p in self._repo.load()]
 
 
 def install_db_source(repo: TemplateRepository) -> None:

@@ -4,7 +4,7 @@
 
 给一段和弦进行（每个和弦占几拍）与段落/风格，为每个和弦选出一个合适的节奏型，输出 16 分音符栅格 + 指法动作序列（扫弦为下扫/上扫、分解为拨弦带具体弦号）。选型把拍数门槛、段落契合、目标密度、技法基线、BPM、位置、进行级连贯性等折算成同一个尺度上的连续代价，越小越靠前。
 
-构建在 [`pytheory`](https://github.com/Zulko/pytheory) 之上，对**任意调弦**中立——指法枚举的音高计算与调弦无关，分解模板用弦角色（音级）表达弦序、选型时按当前和弦 voicing 实例化成具体弦号，换调弦自动重映射。
+构建在 [`pytheory`](https://github.com/Zulko/pytheory) 之上，对**任意调弦**中立——指法枚举的音高计算与调弦无关，分解模板用弦角色（音级 `Root/Fifth/...` 或弦形 `FromTop(k)`）表达弦序、选型时按当前和弦 voicing 实例化成具体弦号，换调弦自动重映射。
 
 ## 三个组成部分
 
@@ -98,7 +98,7 @@ custom = Fretboard.guitar(tuning=("C4", "G3", "D3", "A2"))       # 完全自定�
 
 ```bash
 uv run rhythm-web                       # 或 uv run python -m web_manager.server
-# 默认 127.0.0.1:8000，DB 不存在时自动从硬编码库 seed
+# 默认 127.0.0.1:8000（DB 缺失则拒绝启动并提示路径——模板只存在于那份 JSON 里）
 ```
 
 浏览器里对节奏型模板做 CRUD（存 `rhythm_pattern/data/templates.json`），并直接用 Web Audio 试听——服务端只返回 JSON 音符列表（`/api/preview`），音频在浏览器合成，零服务端音频依赖。
@@ -160,7 +160,7 @@ uv run rhythm-web                       # 或 uv run python -m web_manager.serve
 
 ### Web 管理器的解耦契约
 
-`web_manager/adapter.py` 是唯一桥接层，只导入 `rhythm_pattern` **公开**符号（`set_pattern_source`/`instantiate_pattern`/`resolve_voicing`/`TemplateRepository` 等），绝不碰 `_` 前缀私有函数。选型数据源用全局可注入源：`set_pattern_source(source)` 注入 `PatternSource`，默认仍是硬编码 `STRUM_PATTERNS`（向后兼容），web 启动时注入 `DbPatternSource(repo)` 使编辑后的模板生效。集成到别的项目时 `web_manager` 可整体丢弃而不影响 `rhythm_pattern`。
+`web_manager/adapter.py` 是唯一桥接层，只导入 `rhythm_pattern` **公开**符号（`set_pattern_source`/`instantiate_pattern`/`resolve_voicing`/`TemplateRepository` 等），绝不碰 `_` 前缀私有函数。选型数据源用全局可注入源：`set_pattern_source(source)` 注入 `PatternSource`；默认源 `DbPatternSource` 读 `templates.json`（模板的唯一真源，代码里没有模板表），web 启动时用 `install_db_source(repo)` 指向管理器那份库。集成到别的项目时 `web_manager` 可整体丢弃而不影响 `rhythm_pattern`。
 
 模板 `id` 只存于 DB 记录（不进 `StrumPattern` 构造，核心模型零改动），初始 `id=name`，**id 不可变**，name 可编辑但仓库强制 name 唯一。
 
@@ -169,11 +169,11 @@ uv run rhythm-web                       # 或 uv run python -m web_manager.serve
 ```
 rhythm_pattern/           # 核心：节奏型模板库 + 选型器
   model.py                # 数据模型：Stroke/Pluck/Rest/RhythmGrid/StrumPattern/FingeringAction
-  strum_patterns.py       # 模板库 STRUM_PATTERNS + 选型器 + arrange_progression
+  strum_patterns.py       # 选型器 + arrange_progression + 数据源（DbPatternSource/ListPatternSource）
                           #   + plan_song_rhythm（全曲统一选型）+ SelectionContext
   string_role.py          # 弦角色：Root/Third/Fifth/Seventh/TopN/FromTop/All（按 voicing 实例化弦号）
   serialization.py        # JSON 模板仓库 TemplateRepository + 旧格式迁移工具
-  data/templates.json     # 模板数据库（14 个初始模板，由硬编码库 seed）
+  data/templates.json     # 模板数据库 = 模板的唯一真源（web 管理器 CRUD）
 chord_fingering/          # 基础库：和弦指法枚举与可演奏性评分
   fingering_enumerator.py # 枚举器：笛卡尔积搜索 + 物理剪枝 + 排序
   playability.py          # 可演奏性模型：手指分配 (硬约束) + 连续代价 (评分)
@@ -181,7 +181,6 @@ web_manager/              # 节奏型模板 Web CRUD + 浏览器 Web Audio 试�
   server.py               # stdlib http.server 路由
   adapter.py              # 唯一桥接层（只碰 rhythm_pattern 公开 API）+ pattern_to_notelist
   static/                 # 原生 JS 前端（无 npm）
-scripts/seed_templates.py # 从硬编码库导出模板到 JSON
 rhythm_main.py            # 节奏型选型/编排的审计入口（内联断言验证）
 main.py                   # 指法枚举的演示 + 内联断言验证入口
 tests/                    # pytest 测试
@@ -200,12 +199,11 @@ uv run main.py             # 指法枚举验证（内联断言 + 基准集）
 ## 数据库工具
 
 ```bash
-uv run python -m rhythm_pattern.serialization --seed              # 从硬编码库导出模板到 JSON
 uv run python -m rhythm_pattern.serialization --migrate-legacy    # 迁移旧 None 格 DB 到新显式 duration 格式
 uv run python -m rhythm_pattern.serialization --path <file>       # 指定数据库路径
 ```
 
-`--migrate-legacy` 供迁移用户旧 DB 自定义模板用：旧模型 `None` 格兼表「延续/休止」，迁移后按旧 `fingering_sequence` 逻辑投影到新显式 `duration` 格式。硬编码库已直接写成新格式，不需迁移。
+`--migrate-legacy` 供迁移用户旧 DB 自定义模板用：旧模型 `None` 格兼表「延续/休止」，迁移后按旧 `fingering_sequence` 逻辑投影到新显式 `duration` 格式。
 
 ## 依赖
 

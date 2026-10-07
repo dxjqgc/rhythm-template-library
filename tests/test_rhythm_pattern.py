@@ -8,12 +8,15 @@ import pytest
 from pytheory import Fretboard
 
 from rhythm_pattern import (
-    STRUM_PATTERNS,
     RhythmGrid,
     StrumPattern,
     enumerate_rhythm_patterns,
+    get_pattern_source,
 )
 from rhythm_pattern.model import Pluck, Stroke
+
+ALL_PATTERNS = get_pattern_source().patterns()
+"""模板库当前内容（读 DB；web 管理器改模板后这里的断言跟着走）。"""
 
 
 # ── 共享夹具 ───────────────────────────────────────────────
@@ -106,7 +109,7 @@ class TestGridAlignment:
 
     def test_density_range(self, guitar):
         """密度恒在 [0, 1]，且非全休止栅格密度 > 0。"""
-        for p in STRUM_PATTERNS:
+        for p in ALL_PATTERNS:
             d = p.density()
             assert 0.0 <= d <= 1.0, f"{p.name} 密度 {d} 越界"
         e = enumerate_rhythm_patterns([("C", 4)], guitar, section="chorus", style="pop")[0]
@@ -138,7 +141,7 @@ class TestSectionCoherence:
         """主歌进行只选 verse 适用的模板，不混入副歌专用模板。"""
         prog = [("C", 4), ("G", 2), ("Am", 2)]
         events = enumerate_rhythm_patterns(prog, guitar, section="verse", style="folk")
-        verse_names = {p.name for p in STRUM_PATTERNS if "verse" in p.sections}
+        verse_names = {p.name for p in ALL_PATTERNS if "verse" in p.sections}
         for e in events:
             assert e.pattern.name in verse_names, (
                 f"主歌进行不应选 {e.pattern.name}（不在 verse 适用模板内）"
@@ -172,11 +175,11 @@ class TestTemplateLibrary:
 
     def test_library_nonempty(self):
         """模板库非空。"""
-        assert len(STRUM_PATTERNS) >= 4
+        assert len(ALL_PATTERNS) >= 4
 
     def test_all_patterns_have_consistent_metadata(self):
         """每个模板元数据齐全：grid_motif 总时值 = ticks_per_beat*motif_beats，min_beats>=motif_beats，sections 非空，technique 与栅格内容一致。"""
-        for p in STRUM_PATTERNS:
+        for p in ALL_PATTERNS:
             assert sum(c.duration for c in p.grid_motif) == p.ticks_per_beat * p.motif_beats, (
                 f"{p.name}: grid_motif 总时值 {sum(c.duration for c in p.grid_motif)} "
                 f"!= ticks_per_beat({p.ticks_per_beat})*{p.motif_beats}"
@@ -193,7 +196,7 @@ class TestTemplateLibrary:
 
     def test_boom_chick_is_fallback(self):
         """boom-chick 作为兜底模板存在（min_beats=1）。"""
-        bc = [p for p in STRUM_PATTERNS if p.name == "boom-chick"]
+        bc = [p for p in ALL_PATTERNS if p.name == "boom-chick"]
         assert len(bc) == 1
         assert bc[0].min_beats == 1
 
@@ -204,7 +207,7 @@ class TestMotifTiling:
     def test_integer_multiple_tiles_full_motif(self):
         """beats 是 motif_beats 整数倍时，平铺完整动机。"""
         # pop 8th-notes: motif 1 拍 (D8分 + U8分, 各 duration=2)，占 4 拍应平铺 4 遍。
-        p = next(p for p in STRUM_PATTERNS if p.name == "pop 8th-notes")
+        p = next(p for p in ALL_PATTERNS if p.name == "pop 8th-notes")
         grid = p.grid_for(4)
         assert grid.cells == p.grid_motif * 4
         assert sum(c.duration for c in grid.cells) == 16
@@ -213,7 +216,7 @@ class TestMotifTiling:
         """beats 非整数倍时，平铺整数份动机 + 末尾取动机前缀截断（按 duration 之和）。"""
         # folk D-DU: motif 2 拍 (Stroke(D,4)+Stroke(D,1)+Stroke(U,3), 总时值 8)，占 3 拍 = 总时值 12：
         # 1 份完整动机 (8) + 截断到总时值 4 的前缀 = 第一个 Stroke("D",4)。
-        p = next(p for p in STRUM_PATTERNS if p.name == "folk D-DU")
+        p = next(p for p in ALL_PATTERNS if p.name == "folk D-DU")
         assert p.motif_beats == 2
         grid = p.grid_for(3)
         assert sum(c.duration for c in grid.cells) == 12  # 3 拍 = 12 个 16 分
@@ -222,14 +225,14 @@ class TestMotifTiling:
     def test_beats_shorter_than_motif_takes_prefix(self):
         """beats 短于动机时，取动机前缀（截断到不足一个动机）。"""
         # pop D-DU-U-DU: motif 4 拍 (总时值 16)，占 1 拍取总时值 4 的前缀 = 第一个 Stroke("D",4)。
-        p = next(p for p in STRUM_PATTERNS if p.name == "pop D-DU-U-DU")
+        p = next(p for p in ALL_PATTERNS if p.name == "pop D-DU-U-DU")
         grid = p.grid_for(1)
         assert sum(c.duration for c in grid.cells) == 4
         assert grid.cells == (Stroke("D", 4),)
 
     def test_grid_length_always_four_times_beats(self):
         """任意拍数栅格总时值恒为 4*beats，无论是否整数倍平铺。"""
-        p = next(p for p in STRUM_PATTERNS if p.name == "53231323 (8分)")
+        p = next(p for p in ALL_PATTERNS if p.name == "53231323 (8分)")
         assert p.motif_beats == 4
         for beats in (4, 5, 6, 7, 8):
             grid = p.grid_for(beats)
@@ -270,13 +273,13 @@ class TestTechniqueBaseline:
 
     def test_arpeggio_baseline_picks_arpeggio(self, guitar):
         """arpeggio 基线（宽匹配）把和弦压向分解/琶音模板。"""
-        arp = {p.name for p in STRUM_PATTERNS if not p.is_strum}
+        arp = {p.name for p in ALL_PATTERNS if not p.is_strum}
         for n in self._names(guitar, "arpeggio"):
             assert n in arp, f"arpeggio 基线应选分解/琶音，实际含 {n}"
 
     def test_strum_baseline_picks_strum(self, guitar):
         """strum 基线把和弦压向扫弦模板。"""
-        strum = {p.name for p in STRUM_PATTERNS if p.is_strum}
+        strum = {p.name for p in ALL_PATTERNS if p.is_strum}
         for n in self._names(guitar, "strum"):
             assert n in strum, f"strum 基线应选扫弦，实际含 {n}"
 
@@ -297,7 +300,7 @@ class TestTechniqueBaseline:
         """
         from rhythm_pattern.strum_patterns import pattern_cost, SelectionContext
         true_arp = next(
-            p for p in STRUM_PATTERNS if p.technique == "arpeggio"
+            p for p in ALL_PATTERNS if p.technique == "arpeggio"
             and p.time_signature == (4, 4)
         )
         fp_ctx = SelectionContext(
@@ -333,7 +336,7 @@ class TestTechniqueBaseline:
             section="verse", style="folk", technique_baseline=None,
         )
         common = dict(beats=1, muted=(0, 0, 0), density_neighbor_delta=None)
-        for p in STRUM_PATTERNS:
+        for p in ALL_PATTERNS:
             if p.time_signature != (4, 4) or p.is_strum:
                 continue  # 宽匹配只覆盖拨弦类；扫弦在 arpeggio 基线下仍罚 W_TECHNIQUE
             c_arp = pattern_cost(p, **common, ctx=arp_ctx)
@@ -355,7 +358,7 @@ class TestSectionStrumPrior:
     def test_verse_outro_strum_penalized(self, guitar):
         """pattern_cost 层：verse/outro 下扫弦模板吃 W_SECTION_STRUM，其他段落不吃。"""
         from rhythm_pattern.strum_patterns import W_SECTION_STRUM, pattern_cost, SelectionContext
-        strum = next(p for p in STRUM_PATTERNS if p.is_strum and p.time_signature == (4, 4))
+        strum = next(p for p in ALL_PATTERNS if p.is_strum and p.time_signature == (4, 4))
         common = dict(beats=2, muted=(0, 0, 0), density_neighbor_delta=None)
         for section, expect_penalty in (
             ("verse", True), ("outro", True),
@@ -381,7 +384,7 @@ class TestSectionStrumPrior:
             pattern_cost,
             SelectionContext,
         )
-        strum = next(p for p in STRUM_PATTERNS if p.is_strum and p.time_signature == (4, 4))
+        strum = next(p for p in ALL_PATTERNS if p.is_strum and p.time_signature == (4, 4))
         common = dict(beats=2, muted=(0, 0, 0), density_neighbor_delta=None)
         verse_none = pattern_cost(
             strum, **common, ctx=SelectionContext(section="verse", technique_baseline=None)
@@ -515,22 +518,26 @@ class TestStringRoles:
         return tuple(6 - n for n in ns) if ns else None
 
     def test_root_fifth_top2_adapts_to_chord(self, guitar):
-        """root-5-top2 模板：C 选 21、G 选 32（顶两弦按音距自适应收窄）。"""
-        tpl = next(p for p in STRUM_PATTERNS if "root-5-top2" in p.name)
-        # C: 根音 5 弦、五音 3 弦、顶两弦 2-1。
+        """root-5-top2 模板：C 选 21、G 选 32（顶两弦按音距自适应收窄）。
+
+        末位是 DB 里该模板自带的收尾五音（原为 Rest，后在 web 管理器里改成
+        Pluck(Fifth())）——期望值跟着仓库那份 templates.json 走。
+        """
+        tpl = next(p for p in ALL_PATTERNS if "root-5-top2" in p.name)
+        # C: 根音 5 弦、五音 3 弦、顶两弦 2-1、收尾五音 3 弦。
         grid_c = self._instantiate(guitar, tpl, "C", 1)
         plucks_c = [self._gtr(c.strings) for c in grid_c.cells
                     if isinstance(c, Pluck) and c.strings]
-        assert plucks_c == [(5,), (3,), (2, 1)], f"C 实际 {plucks_c}"
-        # G: 根音 6 弦、五音 4 弦、顶两弦 3-2（根音更低→收窄）。
+        assert plucks_c == [(5,), (3,), (2, 1), (3,)], f"C 实际 {plucks_c}"
+        # G: 根音 6 弦、五音 4 弦、顶两弦 3-2（根音更低→收窄）、收尾五音 4 弦。
         grid_g = self._instantiate(guitar, tpl, "G", 1)
         plucks_g = [self._gtr(c.strings) for c in grid_g.cells
                     if isinstance(c, Pluck) and c.strings]
-        assert plucks_g == [(6,), (4,), (3, 2)], f"G 实际 {plucks_g}"
+        assert plucks_g == [(6,), (4,), (3, 2), (4,)], f"G 实际 {plucks_g}"
 
     def test_53231323_restores_classic_fingering_on_C(self, guitar):
         """53231323 (16分) 在 C 上还原 5-3-2-3-1-3-2-3 弦序。"""
-        tpl = next(p for p in STRUM_PATTERNS if p.name == "53231323 (16分)")
+        tpl = next(p for p in ALL_PATTERNS if p.name == "53231323 (16分)")
         grid = self._instantiate(guitar, tpl, "C", 2)
         seq = [self._gtr(c.strings)[0] for c in grid.cells
                if isinstance(c, Pluck) and c.strings]
@@ -555,7 +562,7 @@ class TestStringRoles:
         上「五音」被解析成 5 弦 2 品的 B2，八个音里四个落在 5 弦低音区，整条分解塌到
         6/5 两弦（6-5-1-5-3-5-1-5）。改用 FromTop 弦形角色后 E 得 63231323。
         """
-        tpl = next(p for p in STRUM_PATTERNS if p.name == "53231323 (16分)")
+        tpl = next(p for p in ALL_PATTERNS if p.name == "53231323 (16分)")
         grid = self._instantiate(guitar, tpl, chord, 2)
         seq = [self._gtr(c.strings)[0] for c in grid.cells
                if isinstance(c, Pluck) and c.strings]
@@ -589,7 +596,7 @@ class TestStringRoles:
         5-3-5-3-5-3——两根弦来回拨，与模板名承诺的 5323 完全不符。名字带数字弦形的
         模板必须逐音写满，少一个音就会被平铺放大成错误的循环。
         """
-        tpl = next(p for p in STRUM_PATTERNS if p.name == name)
+        tpl = next(p for p in ALL_PATTERNS if p.name == name)
         grid = self._instantiate(guitar, tpl, "C", beats)
         seq = "".join(
             str(self._gtr(c.strings)[0])

@@ -279,44 +279,6 @@
     ]
   },
   {
-    "id": "reggae off-beat",
-    "name": "reggae off-beat",
-    "grid_motif": [
-      {
-        "type": "rest",
-        "duration": 1
-      },
-      {
-        "type": "stroke",
-        "direction": "U",
-        "duration": 3,
-        "accent": "default"
-      }
-    ],
-    "motif_beats": 1,
-    "min_beats": 1,
-    "ideal_beats": [
-      1,
-      2
-    ],
-    "sections": [
-      "chorus",
-      "bridge"
-    ],
-    "style": "rock",
-    "technique": "strum",
-    "positions": [],
-    "time_signature": [
-      4,
-      4
-    ],
-    "tags": [
-      "rock",
-      "beat",
-      "fast"
-    ]
-  },
-  {
     "id": "root-5-top2 (1拍)",
     "name": "root-5-top2 (1拍)",
     "grid_motif": [
@@ -349,8 +311,13 @@
         "accent": "default"
       },
       {
-        "type": "rest",
-        "duration": 1
+        "type": "pluck",
+        "role": {
+          "kind": "fifth",
+          "region": null
+        },
+        "duration": 1,
+        "accent": "default"
       }
     ],
     "motif_beats": 1,
@@ -372,12 +339,7 @@
       4,
       4
     ],
-    "tags": [
-      "guitar",
-      "slow",
-      "soft",
-      "classical"
-    ]
+    "tags": []
   },
   {
     "id": "53231323 (16分)",
@@ -651,8 +613,21 @@
     "grid_motif": [
       {
         "type": "pluck",
-        "role": null,
-        "duration": 4,
+        "role": {
+          "kind": "root",
+          "region": null
+        },
+        "duration": 2,
+        "accent": "default"
+      },
+      {
+        "type": "pluck",
+        "role": {
+          "kind": "topn",
+          "n": 2,
+          "span": "comfortable"
+        },
+        "duration": 2,
         "accent": "default"
       }
     ],
@@ -674,13 +649,7 @@
       4,
       4
     ],
-    "tags": [
-      "guitar",
-      "slow",
-      "soft",
-      "classical",
-      "ambient"
-    ]
+    "tags": []
   },
   {
     "id": "arpeggio cadence (tail)",

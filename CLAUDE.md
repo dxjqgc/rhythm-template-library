@@ -19,9 +19,8 @@ uv run pytest tests/test_serialization.py::TestX    # 单个测试类/函数
 uv run rhythm_main.py     # 节奏型选型/编排审计（内联断言，见下）
 uv run main.py            # 指法枚举验证（内联断言 + 基准集）
 
-uv run rhythm-web         # 启 Web 管理器，默认 127.0.0.1:8000，DB 不存在自动 seed
+uv run rhythm-web         # 启 Web 管理器，默认 127.0.0.1:8000（DB 缺失则拒绝启动）
 
-uv run python -m rhythm_pattern.serialization --seed            # 硬编码库 → JSON
 uv run python -m rhythm_pattern.serialization --migrate-legacy  # 旧 None 格 DB → 新 duration 格
 ```
 
@@ -34,7 +33,7 @@ uv run python -m rhythm_pattern.serialization --migrate-legacy  # 旧 None 格 D
 
 关键基准集（改权重后必跑）：
 - `main.py::check_benchmark` — 吉他教材常用指法（C/G/D/Am/F/C7/Em7…）必须排进前 `TOP_N=3`。改 `chord_fingering/playability.py` 权重后必跑。
-- `rhythm_main.py::check_benchmark` — 一组「进行+段落+风格」的公认首选模板必须排进前列。改 `rhythm_pattern/strum_patterns.py` 模板库或 `pattern_cost` 的 `W_*` 权重后必跑。
+- `rhythm_main.py::check_benchmark` — 一组「进行+段落+风格」的公认首选模板必须排进前列。改 `pattern_cost` 的 `W_*` 权重后必跑；**改 templates.json 里的模板同样会动它**（期望集跟 DB 走，数据一改结果就可能变）。
 
 `rhythm_main.py` 还断言栅格对齐（任意拍数总时值 = `ticks_per_beat × 拍数`）、6/8 拍号契合（`check_68`）、弦角色实例化（`check_string_roles`）等。
 
@@ -75,11 +74,21 @@ uv run python -m rhythm_pattern.serialization --migrate-legacy  # 旧 None 格 D
 
 `required_pitch_classes` 按吉他惯例给可省音级（三和弦不省；七和弦及以上可省完全五音；音数≥5 十一音也可省；减五/增五不省）。`allow_omissions=True`（默认）才找得到开放 C7 `x32310`（缺五音）。
 
+### 数据源：模板唯一真源是 templates.json（`rhythm_pattern/strum_patterns.py` 的数据源一节）
+
+**代码里没有模板表。** 模板只存在于 `rhythm_pattern/data/templates.json`（web 管理器的 CRUD 目标），选型器经 `PatternSource` 协议读它：
+
+- `DbPatternSource(repo)` — 默认源，`patterns()` 每次重新 `load()`，web 管理器编辑下一次选型即生效，无需重启。读失败（web 管理器非原子写入的半截 JSON）时返回上一次成功的内存快照并告警；**从没成功读过（DB 缺失/损坏/空）则异常照抛**——那是部署问题，不该被陈旧数据掩盖。
+- `ListPatternSource(patterns)` — 固定列表源，测试/嵌入方用 `set_pattern_source` 注入。
+- `set_pattern_source(None)` 重置回默认 DB 源。
+
+下游（后端 `RhythmService`）据此把「DB 不可用」翻译成 `available=false`，前端显示「节奏型服务不可用」横幅。改选型数据流走这条 seam，不要绕过；加模板直接改 DB（web 管理器），不要往代码里加模板表。
+
+**测试也读这份 DB**（`ALL_PATTERNS = get_pattern_source().patterns()`），即测的就是线上真数据；代价是 web 管理器一改模板，部分断言（尤其 `rhythm_main.py::check_benchmark` 的期望集）会跟着红，需要同步更新期望而不是回退数据。
+
 ### Web 管理器解耦契约（`web_manager/adapter.py`）
 
-`adapter.py` 是**唯一桥接层**，只导入 `rhythm_pattern` **公开**符号，绝不碰 `_` 前缀私有函数——这是硬约束，保证 `web_manager` 可整体丢弃而不影响核心。集成到别的项目时 `web_manager` 可删。
-
-**数据源注入 seam**：选型器用全局可注入源 `set_pattern_source(source)`（默认硬编码 `STRUM_PATTERNS`，向后兼容）；Web 启动时 `install_db_source(repo)` 注入 `DbPatternSource(repo)` 使编辑后的模板生效。改选型数据流走这条 seam，不要绕过。
+`adapter.py` 是**唯一桥接层**，只导入 `rhythm_pattern` **公开**符号，绝不碰 `_` 前缀私有函数——这是硬约束，保证 `web_manager` 可整体丢弃而不影响核心。集成到别的项目时 `web_manager` 可删。`DbPatternSource` 的实现已上移到核心（`rhythm_pattern`），adapter 只是原样转出 + 提供 `install_db_source(repo)`。
 
 `pattern_to_notelist` 是试听核心数据契约：服务端只返回 JSON 音符列表（`/api/preview`），音频在浏览器用 Web Audio 合成，零服务端音频依赖。
 

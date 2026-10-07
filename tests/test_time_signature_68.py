@@ -9,11 +9,14 @@ import pytest
 from pytheory import Fretboard
 
 from rhythm_pattern import (
-    STRUM_PATTERNS,
     SelectionContext,
     enumerate_rhythm_patterns,
+    get_pattern_source,
 )
 from rhythm_pattern.model import Pluck, RhythmGrid, Stroke, StrumPattern
+
+ALL_PATTERNS = get_pattern_source().patterns()
+"""模板库当前内容（读 DB）。"""
 
 
 @pytest.fixture(scope="module")
@@ -23,7 +26,7 @@ def guitar() -> Fretboard:
 
 def _pattern_68() -> StrumPattern:
     """6/8 folk D-DU：D(3,strong) + U(3,weak)，2 拍动机 = 1 小节。"""
-    return next(p for p in STRUM_PATTERNS if p.name == "6/8 folk D-DU")
+    return next(p for p in ALL_PATTERNS if p.name == "6/8 folk D-DU")
 
 
 # ── 时值模型：ticks_per_beat 与 grid 不变量 ──────────────────────────
@@ -36,7 +39,7 @@ class TestTimeSignatureModel:
 
     def test_44_ticks_per_beat_is_four(self):
         """4/4 拍号 ticks_per_beat = 4（不变）。"""
-        p44 = next(p for p in STRUM_PATTERNS if p.time_signature == (4, 4))
+        p44 = next(p for p in ALL_PATTERNS if p.time_signature == (4, 4))
         assert p44.ticks_per_beat == 4
 
     def test_grid_68_total_is_three_times_beats(self, guitar):
@@ -79,7 +82,7 @@ class TestTimeSignatureModel:
 
     def test_metadata_consistency_all_patterns(self):
         """所有模板（4/4 与 6/8）grid_motif 总时值 = ticks_per_beat * motif_beats。"""
-        for p in STRUM_PATTERNS:
+        for p in ALL_PATTERNS:
             assert sum(c.duration for c in p.grid_motif) == p.ticks_per_beat * p.motif_beats, (
                 f"{p.name}: 总时值 {sum(c.duration for c in p.grid_motif)} "
                 f"!= tpb({p.ticks_per_beat})*{p.motif_beats}"
@@ -111,8 +114,8 @@ class TestSelection68:
         assert e.pattern.name == "pop D-DU-U-DU"
 
     def test_68_library_has_exclusive_patterns(self):
-        """硬编码库含 6/8 专属模板。"""
-        p68 = [p for p in STRUM_PATTERNS if p.time_signature == (6, 8)]
+        """库（templates.json）含 6/8 专属模板。"""
+        p68 = [p for p in ALL_PATTERNS if p.time_signature == (6, 8)]
         assert len(p68) >= 3
         # 每个含至少一个 strong accent
         for p in p68:

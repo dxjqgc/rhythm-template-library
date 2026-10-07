@@ -10,11 +10,14 @@ import pytest
 from pytheory import Fretboard
 
 from rhythm_pattern import (
-    STRUM_PATTERNS,
     SelectionContext,
     enumerate_rhythm_patterns,
+    get_pattern_source,
 )
 from rhythm_pattern.model import Stroke, StrumPattern
+
+ALL_PATTERNS = get_pattern_source().patterns()
+"""模板库当前内容（读 DB）。"""
 
 
 @pytest.fixture(scope="module")
@@ -24,12 +27,12 @@ def guitar() -> Fretboard:
 
 def _pattern_532132_34() -> StrumPattern:
     """3/4 532132：六音 8 分（各 2 tick）填满 3 拍小节。"""
-    return next(p for p in STRUM_PATTERNS if p.name == "3/4 532132 (8分)")
+    return next(p for p in ALL_PATTERNS if p.name == "3/4 532132 (8分)")
 
 
 def _pattern_532132_68() -> StrumPattern:
     """6/8 532132 孪生：六音 8 分（各 1 tick）填满 2 附点拍小节。"""
-    return next(p for p in STRUM_PATTERNS if p.name == "6/8 532132 (8分)")
+    return next(p for p in ALL_PATTERNS if p.name == "6/8 532132 (8分)")
 
 
 # ── 时值模型：ticks_per_beat 与 grid 不变量 ──────────────────────────
@@ -60,8 +63,8 @@ class TestTimeSignatureModel34:
             )
 
     def test_34_library_has_exclusive_patterns(self):
-        """硬编码库含 3/4 专属模板家族（532132 + waltz + boom-chick + cadence）。"""
-        p34 = [p for p in STRUM_PATTERNS if p.time_signature == (3, 4)]
+        """库（templates.json）含 3/4 专属模板家族（532132 + waltz + boom-chick + cadence）。"""
+        p34 = [p for p in ALL_PATTERNS if p.time_signature == (3, 4)]
         names = {p.name for p in p34}
         assert {
             "3/4 532132 (8分)",

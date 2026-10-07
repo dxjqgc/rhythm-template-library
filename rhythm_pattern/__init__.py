@@ -39,7 +39,8 @@ from .model import (
     fingering_sequence,
 )
 from .strum_patterns import (
-    STRUM_PATTERNS,
+    DbPatternSource,
+    ListPatternSource,
     PatternSource,
     SelectionContext,
     arrange_progression,
@@ -56,7 +57,6 @@ from .serialization import (
     TemplateRepository,
     dict_to_pattern,
     pattern_to_dict,
-    seed_from_hardcoded,
 )
 from .string_role import (
     All,
@@ -81,15 +81,16 @@ __all__ = [
     "FingeringAction",
     "fingering_sequence",
     "Position",
-    "STRUM_PATTERNS",
     "enumerate_rhythm_patterns",
     "arrange_progression",
     "plan_song_rhythm",
     "pattern_cost",
     "SelectionContext",
     "to_json",
-    # 数据源 seam（可注入，默认硬编码 STRUM_PATTERNS）
+    # 数据源（模板唯一真源 = 文本数据库 templates.json）
     "PatternSource",
+    "ListPatternSource",
+    "DbPatternSource",
     "set_pattern_source",
     "get_pattern_source",
     # 单模板实例化公开 helper（试听等）
@@ -99,7 +100,6 @@ __all__ = [
     "pattern_to_dict",
     "dict_to_pattern",
     "TemplateRepository",
-    "seed_from_hardcoded",
     # 弦角色（分解模板的弦序表达，按 voicing 实例化）
     "StringRole",
     "Root",

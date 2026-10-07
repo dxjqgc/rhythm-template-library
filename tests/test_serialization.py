@@ -1,30 +1,33 @@
 """测试模板序列化 + 文本数据库仓库。
 
-覆盖：所有硬编码模板的 JSON 往返、各弦角色变体往返、仓库 CRUD、seed 确定性、
-数据源 seam 注入。
+覆盖：DB 里每个模板的 JSON 往返、各弦角色变体往返、仓库 CRUD、数据源注入。
+模板的来源是 `rhythm_pattern/data/templates.json`（唯一真源，无硬编码备份），
+所以这里的参数化用例跑的就是线上那份数据。
 """
 
 import json
 
 import pytest
 
-from rhythm_pattern import STRUM_PATTERNS
+from rhythm_pattern import get_pattern_source
 from rhythm_pattern.model import Pluck, Rest, StrumPattern, Stroke
 from rhythm_pattern.serialization import (
     TemplateRepository,
     dict_to_pattern,
     pattern_to_dict,
-    seed_from_hardcoded,
 )
 from rhythm_pattern.string_role import All, Fifth, FromTop, Root, Seventh, Third, TopN
+
+ALL_PATTERNS = get_pattern_source().patterns()
+"""模板库当前内容（读 DB）。web 管理器改模板后这里的断言跟着走。"""
 
 
 # ── 往返 ─────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("pattern", STRUM_PATTERNS, ids=lambda p: p.name)
-def test_hardcoded_roundtrip(pattern):
-    """每个硬编码模板经 dict 往返后与自身相等（含过 __post_init__ 校验）。"""
+@pytest.mark.parametrize("pattern", ALL_PATTERNS, ids=lambda p: p.name)
+def test_db_pattern_roundtrip(pattern):
+    """DB 里每个模板经 dict 往返后与自身相等（含过 __post_init__ 校验）。"""
     rt = dict_to_pattern(pattern_to_dict(pattern))
     assert rt == pattern
 
@@ -65,7 +68,7 @@ def test_role_variants_roundtrip():
 
 def test_roundtrip_keeps_grid_semantics():
     """往返后 grid_motif 的格子类型与 role 参数逐一相等（防 kind 错位）。"""
-    p = next(p for p in STRUM_PATTERNS if p.name == "53231323 (16分)")
+    p = next(p for p in ALL_PATTERNS if p.name == "53231323 (16分)")
     rt = dict_to_pattern(pattern_to_dict(p))
     assert len(rt.grid_motif) == len(p.grid_motif)
     for a, b in zip(p.grid_motif, rt.grid_motif):
@@ -161,23 +164,19 @@ def test_repo_update_name_conflict(repo):
         repo.update("alpha", _sample("beta"))
 
 
-# ── seed ─────────────────────────────────────────────────────────────
+# ── 仓库文件本身 ─────────────────────────────────────────────────────
 
 
-def test_seed_writes_all(tmp_path):
-    path = seed_from_hardcoded(tmp_path / "seeded.json")
-    repo = TemplateRepository(path)
-    items = repo.load()
-    assert len(items) == len(STRUM_PATTERNS)
-    # 每条与硬编码按 dict 相等
-    by_name = {p.name: p for p in STRUM_PATTERNS}
-    for rid, pat in items:
-        assert pattern_to_dict(pat) == pattern_to_dict(by_name[rid])
+def test_db_file_is_utf8_chinese():
+    """仓库里那份 templates.json 以 UTF-8 直存中文名（非 \\u 转义），且能解析。"""
+    from rhythm_pattern.serialization import _DEFAULT_DB_PATH
 
-
-def test_seed_json_is_utf8_chinese(tmp_path):
-    path = seed_from_hardcoded(tmp_path / "seeded.json")
-    raw = path.read_text(encoding="utf-8")
-    # 含中文名的模板应直接以中文存储（非 \\u 转义）。
+    raw = _DEFAULT_DB_PATH.read_text(encoding="utf-8")
     assert "16分" in raw or "8分" in raw
-    json.loads(raw)  # 解析无错
+    json.loads(raw)
+
+
+def test_db_roundtrips_through_repo():
+    """把 DB 整表读出来再写回临时库，逐条按 dict 相等（防仓库写出丢字段）。"""
+    source = next(p for p in ALL_PATTERNS)
+    assert dict_to_pattern(pattern_to_dict(source)) == source

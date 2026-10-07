@@ -4,14 +4,17 @@ import pytest
 from pytheory import Fretboard
 
 from rhythm_pattern import (
-    STRUM_PATTERNS,
+    get_pattern_source,
     instantiate_pattern,
     resolve_voicing,
     set_pattern_source,
 )
 from rhythm_pattern.model import Pluck, Stroke
-from rhythm_pattern.serialization import TemplateRepository, seed_from_hardcoded
+from rhythm_pattern.serialization import TemplateRepository
 from web_manager.adapter import DbPatternSource, pattern_to_notelist
+
+ALL_PATTERNS = get_pattern_source().patterns()
+"""模板库当前内容（读 DB）。"""
 
 
 @pytest.fixture(scope="module")
@@ -21,14 +24,14 @@ def guitar() -> Fretboard:
 
 def _arpeggio_pattern():
     """取一个分解模板（root-5-top2）。"""
-    return next(p for p in STRUM_PATTERNS if p.name == "root-5-top2 (1拍)")
+    return next(p for p in ALL_PATTERNS if p.name == "root-5-top2 (1拍)")
 
 
 # ── instantiate_pattern ─────────────────────────────────────────────
 
 
 def test_instantiate_strum_returns_events(guitar):
-    p = next(p for p in STRUM_PATTERNS if p.name == "boom-chick")
+    p = next(p for p in ALL_PATTERNS if p.name == "boom-chick")
     ev = instantiate_pattern(p, "C", guitar, 4)
     # 含 stroke 动作；fingering duration 之和 = 4*beats。
     kinds = {a.kind for a in ev.fingering}
@@ -62,7 +65,7 @@ def test_resolve_voicing_returns_midi_map(guitar):
 
 
 def test_notelist_strum_shape(guitar):
-    p = next(p for p in STRUM_PATTERNS if p.name == "boom-chick")
+    p = next(p for p in ALL_PATTERNS if p.name == "boom-chick")
     nl = pattern_to_notelist(p, "C", guitar, 4, bpm=90)
     assert nl["total_tick"] == 16
     assert nl["ticks_per_beat"] == 4
@@ -89,14 +92,14 @@ def test_notelist_arpeggio_has_pluck_strings(guitar):
 
 def test_db_source_injection_makes_selection_use_db(guitar, tmp_path):
     """注入 DB 源后，enumerate/arrange 读到的模板集与 DB 一致。"""
-    path = seed_from_hardcoded(tmp_path / "db.json")
-    repo = TemplateRepository(path)
+    repo = TemplateRepository(tmp_path / "db.json")
+    repo.save_all([(p.name, p) for p in ALL_PATTERNS])
     src = DbPatternSource(repo)
     set_pattern_source(src)
     try:
-        assert len(src.patterns()) == len(STRUM_PATTERNS)
+        assert len(src.patterns()) == len(ALL_PATTERNS)
     finally:
-        set_pattern_source(None)  # 重置回硬编码默认，避免污染其他测试
+        set_pattern_source(None)  # 重置回默认 DB 源，避免污染其他测试
 
 
 def test_notelist_unresolvable_chord_raises(guitar):
@@ -104,23 +107,19 @@ def test_notelist_unresolvable_chord_raises(guitar):
 
     这里只断言底层会抛，确认 server 的 try/except 是必要的。
     """
-    p = next(p for p in STRUM_PATTERNS if p.name == "boom-chick")
+    p = next(p for p in ALL_PATTERNS if p.name == "boom-chick")
     with pytest.raises(ValueError):
         pattern_to_notelist(p, "Z#bogus", guitar, 4)
 
 
 def test_boom_chick_fallback_never_crashes():
-    """boom-chick 被数据源和硬编码列表同时删除时，内联兜底仍返回有效模板，绝不抛 StopIteration。"""
+    """数据源里连同拍号 boom-chick 都没有时，内联兜底仍返回有效模板，绝不抛 StopIteration。"""
     from rhythm_pattern.strum_patterns import _boom_chick_fallback
 
     class _EmptySource:
         def patterns(self):
             return []
 
-    # 临时把硬编码 STRUM_PATTERNS 也清空（再恢复），模拟极端场景。
-    from rhythm_pattern import strum_patterns as sp
-    saved = list(sp.STRUM_PATTERNS)
-    sp.STRUM_PATTERNS.clear()
     set_pattern_source(_EmptySource())
     try:
         fb = _boom_chick_fallback()
@@ -128,5 +127,4 @@ def test_boom_chick_fallback_never_crashes():
         assert fb.min_beats == 1  # 可作 fallback（min_beats=1）
         assert sum(c.duration for c in fb.grid_motif) == 4
     finally:
-        sp.STRUM_PATTERNS[:] = saved
         set_pattern_source(None)  # 重置默认源

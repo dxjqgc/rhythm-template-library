@@ -1,10 +1,10 @@
 """节奏型模板的序列化 + 文本数据库仓库。
 
 把 :class:`~rhythm_pattern.model.StrumPattern`（含 ``Stroke`` / ``Pluck(role)`` /
-``None`` 栅格与弦角色）与 JSON 之间做往返转换，并落地到一个文本数据库
-``rhythm_pattern/data/templates.json``，供 web 管理器增删改查。这样模板不再硬编码
-在代码里，而是由文本数据库承载；硬编码的 :data:`STRUM_PATTERNS` 保留为兜底默认源
-（见 :mod:`rhythm_pattern.strum_patterns` 的 ``set_pattern_source``）。
+``None`` 栅格与弦角色）与 JSON 之间做往返转换，并落地到文本数据库
+``rhythm_pattern/data/templates.json``，供 web 管理器增删改查。**这份 DB 是模板的
+唯一真源**——代码里没有硬编码模板表，选型器默认就从这里读（见
+:mod:`rhythm_pattern.strum_patterns` 的数据源一节）。
 
 序列化只针对**模板**（``Pluck.strings`` 在模板层恒为 ``None``，不序列化）；实例化后的
 栅格（弦号已填）不在序列化范围内。
@@ -304,27 +304,6 @@ class TemplateRepository:
         self._write_raw(list(seen.values()))
 
 
-# ── 从硬编码库 seed ──────────────────────────────────────────────────
-
-
-def seed_from_hardcoded(path: Path | str | None = None) -> Path:
-    """把硬编码 :data:`STRUM_PATTERNS` 全量导出到文本数据库（一次性 seed）。
-
-    ``id`` 直接取 ``name``（初始模板名已是唯一可读 slug）。硬编码列表**保留**在代码里
-    作为兜底默认源，不删除。返回写入的文件路径。
-
-    Parameters
-    ----------
-    path
-        目标文件路径；默认 :data:`_DEFAULT_DB_PATH`。
-    """
-    from .strum_patterns import STRUM_PATTERNS
-
-    repo = TemplateRepository(path)
-    repo.save_all([(p.name, p) for p in STRUM_PATTERNS])
-    return repo.path
-
-
 def migrate_old_grid(cells: tuple) -> tuple[Cell, ...]:
     """旧 None 格栅格 → 新显式时值动作序列（一次性迁移工具）。
 
@@ -335,8 +314,8 @@ def migrate_old_grid(cells: tuple) -> tuple[Cell, ...]:
       （吸收其后的 None 为延续）。这些 None 不再单列。
     - None 段（发音前的真静默）→ :class:`Rest`，``duration`` = 连续 None 数。
 
-    供 ``--migrate-legacy`` 迁移用户旧 DB 自定义模板用。硬编码库已直接写成新格式，
-    不需调本函数。
+    供 ``--migrate-legacy`` 迁移用户旧 DB 自定义模板用；仓库现行的
+    ``data/templates.json`` 已是新格式，不需调本函数。
     """
     out: list[Cell] = []
     i = 0
@@ -397,15 +376,9 @@ def _main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description="节奏型模板数据库工具")
-    parser.add_argument("--seed", action="store_true", help="从硬编码库导出模板到 JSON")
     parser.add_argument("--migrate-legacy", action="store_true", help="迁移旧 None 格 DB 到新显式 duration 格式")
     parser.add_argument("--path", default=None, help="数据库文件路径")
     args = parser.parse_args()
-    if args.seed:
-        p = seed_from_hardcoded(args.path)
-        n = len(TemplateRepository(p).load())
-        print(f"已 seed {n} 个模板到 {p}")
-        return
     if args.migrate_legacy:
         p = migrate_legacy_db(args.path)
         n = len(TemplateRepository(p).load())
