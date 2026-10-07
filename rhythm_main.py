@@ -34,10 +34,9 @@ BENCHMARK: list[tuple[list[tuple[str, int]], str, str, list[str]]] = [
     # 标签（musicnn 强证据）下扫弦仍可胜出（软罚不排除）。
     #
     # 注：期望集里的 arpeggio roll (tail) 是 DB 现状选出来的。arpeggio placeholder
-    # 在 web 管理器里被改过（1 拍的 role=None 占位 → Root+TopN(2) 两音动机）、且保存
-    # 时 tags 被管理器的表单冲成空，代价从 0.400 升到 0.600，于是在 2 拍槽位让位给
-    # arpeggio roll (tail)（同为 0.400 档）。数据侧修回去（补 tags）后这里会重新回到
-    # placeholder——本期望集跟 DB 走，不再硬编码一份独立的事实。
+    # 在 web 管理器里被改过（1 拍的 role=None 占位 → Root+TopN(2) 两音动机），密度
+    # 0.25 → 0.50，在这个 2 拍槽位的代价从 0.400 升到 0.600（arpeggio roll 仍是
+    # 0.400），于是让位。本期望集跟 DB 走，不再硬编码一份独立的事实。
     ([("C", 4), ("G", 2), ("Am", 2)], "verse", "folk",
      ["53231323 (8分)", "arpeggio placeholder", "arpeggio cadence short (tail)",
       "arpeggio roll (tail)"]),

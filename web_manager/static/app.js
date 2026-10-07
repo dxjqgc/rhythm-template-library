@@ -65,6 +65,8 @@ function fillForm() {
   $("f-ideal").value = (t.ideal_beats || []).join(",");
   $("f-sections").value = (t.sections || []).join(",");
   $("f-positions").value = (t.positions || []).join(",");
+  // tags 是选型的一维输入（musicnn 标签匹配），表单漏了它会把已有标签冲空。
+  $("f-tags").value = (t.tags || []).join(",");
   renderGrid(t.grid_motif || []);
 }
 
@@ -84,6 +86,7 @@ function readForm() {
     ideal_beats: parseCsvInt($("f-ideal").value),
     sections: parseCsv($("f-sections").value),
     positions: parseCsv($("f-positions").value),
+    tags: parseCsv($("f-tags").value),
     grid_motif: grid,
   };
 }
@@ -315,6 +318,7 @@ function readFormOnInit() {
     name: current.name, technique: current.technique, style: current.style,
     motif_beats: current.motif_beats, min_beats: current.min_beats,
     ideal_beats: current.ideal_beats, sections: current.sections, positions: current.positions,
+    tags: current.tags || [],
     time_signature: current.time_signature || [4, 4],
     grid_motif: current.grid_motif,
   };

@@ -92,6 +92,8 @@ uv run python -m rhythm_pattern.serialization --migrate-legacy  # 旧 None 格 D
 
 `pattern_to_notelist` 是试听核心数据契约：服务端只返回 JSON 音符列表（`/api/preview`），音频在浏览器用 Web Audio 合成，零服务端音频依赖。
 
+**`tags` 的保护（踩过坑）**：`PUT /api/templates/<id>` 是整条替换，但请求体**没带 `tags` 键时保留原值**，显式给 `[]` 才清空。起因：`readForm()` 曾漏掉这个字段，经管理器保存一次就把模板已有标签冲成空——tags 参与选型（musicnn 标签匹配那维），静默丢失会悄悄改变选型结果，已真丢过两个模板的标签。表单现已带该字段，服务端兜底仍在。回归见 `tests/test_web_manager_server.py`。
+
 模板 `id` 只存于 DB 记录（不进 `StrumPattern` 构造，核心模型零改动），初始 `id=name`，**id 不可变**，name 可编辑但仓库强制 name 唯一。模板库存 `rhythm_pattern/data/templates.json`。
 
 ## 全局工作约束

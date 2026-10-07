@@ -143,6 +143,14 @@ def _update_template(srv: _Server, handler: BaseHTTPRequestHandler, id: str) -> 
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         _error(handler, f"请求体 JSON 解析失败: {e}")
         return
+    # PUT 是整条替换：缺字段按默认值补。但 `tags` 破例——编辑器某版表单没带
+    # 这个字段，保存一次就把已有 tags 冲空（真冲掉过两个模板的标签，且 tags 是
+    # 选型的一维输入，静默丢失会改变选型结果）。故：**没给 `tags` 键 = 保留原值**，
+    # 显式给 `[]` 才是清空。
+    if "tags" not in tmpl:
+        existing = srv.repo.get(id)
+        if existing is not None:
+            tmpl = {**tmpl, "tags": list(existing.tags)}
     try:
         pattern = template_dict_to_pattern(tmpl)
     except (ValueError, TypeError, KeyError) as e:
