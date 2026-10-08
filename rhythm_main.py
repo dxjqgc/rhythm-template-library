@@ -302,8 +302,11 @@ def check_selection_context(gtr) -> None:
        重罚（量级 50），让位 6/8 专属模板（``time_signature==(6,8)`` 不罚）。6/8 是拍号
        维度真正起作用的场景（有专属模板可替代）；3/4 等无专属模板的拍号下重罚无差别，
        4/4 模板仍可能被选。
-    2. **BPM 可演奏性**：``ctx.bpm=180``（高 BPM）下，``53231323 (16分)`` 这类密度 1.0
-       的过密分解模板吃 ``W_BPM_HIGH`` 罚分，让位低密度模板。
+    2. **BPM 可演奏性**：按**绝对发音速率**罚（``density × 4 × bpm / 60`` 超出
+       ``MAX_ONSETS_PER_SEC`` 的部分乘 ``W_RATE_HIGH``），不是按相对密度 —— 相对密度
+       会漏掉最常见的一档：八分音符分解 density 恰为 0.5，旧阈值 ``density > 0.5``
+       让它**在任何 BPM 下都零罚分**。3/4 分解 ``532132 (8分)`` 在 176 BPM 是 5.9
+       发音/秒（弹不动）应吃罚，在 88 BPM 只有 2.9（轻松）不吃罚。
     3. **缺省降级**：``SelectionContext()`` 全空字段时，输出与旧式调用
        ``enumerate_rhythm_patterns(progression, gtr)`` 完全一致（拍号/BPM 不介入）。
     4. **实测起音密度融合**：``ctx.onset_density`` 给定时与段落静态目标密度加权融合
@@ -333,31 +336,69 @@ def check_selection_context(gtr) -> None:
         f"{e_68.pattern.name} (ts={e_68.pattern.time_signature})"
     )
 
-    # ── 2. BPM 可演奏性：高 BPM 下过密模板吃罚分 ──
+    # ── 2. BPM 可演奏性：按绝对发音速率罚 ──
     # 直接在 pattern_cost 层验证罚分值，不依赖整体选型能否翻盘（BPM 是软罚分，在 chorus
     # 高目标密度段落下，高密度模板即便加罚也仍可能胜出--这是设计预期，不该靠翻盘来验证）。
-    # 53231323 (16分) 密度 1.0，180 BPM 下应吃 (1.0-0.5)*W_BPM_HIGH = 1.5 罚分；
-    # 低密度模板（boom-chick 0.25）不受 BPM 影响。
+    # 罚分 = (density*4*bpm/60 - MAX_ONSETS_PER_SEC) * W_RATE_HIGH，超出部分为负时取 0。
     from rhythm_pattern import pattern_cost
+    from rhythm_pattern.strum_patterns import (
+        MAX_ONSETS_PER_SEC,
+        MAX_ONSETS_PER_SEC_STRUM,
+        ONSETS_PER_BEAT_AT_FULL_DENSITY,
+        W_RATE_HIGH,
+    )
+
+    def _close(a, b):
+        return abs(a - b) < 1e-9
+
+    def _expected_rate_penalty(density, bpm, is_strum):
+        ceiling = MAX_ONSETS_PER_SEC_STRUM if is_strum else MAX_ONSETS_PER_SEC
+        rate = density * ONSETS_PER_BEAT_AT_FULL_DENSITY * bpm / 60.0
+        return max(0.0, (rate - ceiling) * W_RATE_HIGH)
+
+    def _delta(pattern, bpm, beats):
+        common = dict(beats=beats, muted=(0, 0, 0), density_neighbor_delta=None)
+        a = pattern_cost(pattern, **common, ctx=SelectionContext(section="verse", style="folk"))
+        b = pattern_cost(pattern, **common, ctx=SelectionContext(section="verse", style="folk", bpm=bpm))
+        return a, b, b - a
+
     dense = next(p for p in ALL_PATTERNS if p.name == "53231323 (16分)")
     sparse = next(p for p in ALL_PATTERNS if p.name == "boom-chick")
-    common = dict(beats=2, muted=(0, 0, 0), density_neighbor_delta=None)
-    ctx_no_bpm = SelectionContext(section="verse", style="folk")
-    ctx_fast = SelectionContext(section="verse", style="folk", bpm=180)
-    cost_dense_no = pattern_cost(dense, **common, ctx=ctx_no_bpm)
-    cost_dense_fast = pattern_cost(dense, **common, ctx=ctx_fast)
-    cost_sparse_no = pattern_cost(sparse, **common, ctx=ctx_no_bpm)
-    cost_sparse_fast = pattern_cost(sparse, **common, ctx=ctx_fast)
-    print(f"  53231323(16分) 密度1.0: bpm缺省={cost_dense_no:.2f} bpm=180={cost_dense_fast:.2f} (差 {cost_dense_fast-cost_dense_no:+.2f})")
-    print(f"  boom-chick     密度0.25: bpm缺省={cost_sparse_no:.2f} bpm=180={cost_sparse_fast:.2f} (差 {cost_sparse_fast-cost_sparse_no:+.2f})")
-    assert cost_dense_fast > cost_dense_no, "高 BPM 下过密分解模板代价应上升"
-    assert abs((cost_dense_fast - cost_dense_no) - 1.5) < 1e-9, (
-        "过密模板(密度1.0)在高 BPM 下罚分应为 (1.0-0.5)*W_BPM_HIGH=1.5，"
-        f"实际差 {cost_dense_fast - cost_dense_no}"
+    eighth = next(p for p in ALL_PATTERNS if p.name == "3/4 532132 (8分)")
+
+    c_dn, c_df, d_dense = _delta(dense, 180, 2)
+    c_sn, c_sf, d_sparse = _delta(sparse, 180, 2)
+    c_en, c_ef, d_eighth = _delta(eighth, 176, 3)
+    c_e88n, c_e88f, d_eighth_88 = _delta(eighth, 88, 3)
+
+    print(f"  53231323(16分) 密度1.0 @180: bpm缺省={c_dn:.2f} bpm=180={c_df:.2f} (差 {d_dense:+.2f})")
+    print(f"  boom-chick     密度0.25@180: bpm缺省={c_sn:.2f} bpm=180={c_sf:.2f} (差 {d_sparse:+.2f})")
+    print(f"  3/4 532132(8分)密度0.50@176: bpm缺省={c_en:.2f} bpm=176={c_ef:.2f} (差 {d_eighth:+.2f})")
+    print(f"  3/4 532132(8分)密度0.50@ 88: bpm缺省={c_e88n:.2f} bpm=88={c_e88f:.2f} (差 {d_eighth_88:+.2f})")
+
+    assert _close(d_dense, _expected_rate_penalty(1.0, 180, dense.is_strum)), (
+        f"密度1.0 @180 罚分应为 {_expected_rate_penalty(1.0, 180, dense.is_strum)}，实际 {d_dense}"
     )
-    assert cost_sparse_fast == cost_sparse_no, (
-        "低密度模板(密度0.25<=0.5)不应受 BPM 罚分影响，实际差 "
-        f"{cost_sparse_fast - cost_sparse_no}"
+    assert d_dense > 0, "高 BPM 下过密分解模板代价应上升"
+    assert d_sparse == 0, (
+        "低密度模板(0.25 -> 3.0 发音/秒)不应受速率罚分影响，实际差 " f"{d_sparse}"
+    )
+    # ★ 回归：八分音符分解（density 恰为 0.5）在旧公式 (density-0.5)*W_BPM_HIGH 下
+    #   罚分恒为 0 —— 任何 BPM 都零罚，这正是「176 BPM 还选八分分解」的根因。
+    assert _close(d_eighth, _expected_rate_penalty(0.5, 176, eighth.is_strum)), (
+        f"八分分解 @176 罚分应为 {_expected_rate_penalty(0.5, 176, eighth.is_strum)}，实际 {d_eighth}"
+    )
+    assert d_eighth > 0, "八分分解在 176 BPM 下必须吃罚（旧公式此处恒为 0）"
+    assert d_eighth_88 == 0, "同样的八分分解在 88 BPM 下只有 2.9 发音/秒，不该吃罚"
+    # ★ 扫弦与分解的上限必须分开：十六分**扫弦**在 120 BPM 是 8 发音/秒，是流行扫弦的
+    #   常规动作；用分解的 5.0 上限去罚它，会把 onset_density 驱动的密度响应整个压平
+    #   （后端 test_arrange_onset_density_pulls_target 就是这么红的）。
+    strum16 = next(p for p in ALL_PATTERNS if p.name == "D-D-DU (1拍16分)")
+    _, _, d_strum16 = _delta(strum16, 120, 2)
+    print(f"  D-D-DU(1拍16分) 扫弦  @120: (差 {d_strum16:+.2f})")
+    assert strum16.is_strum, "该模板应为扫弦（回归前提）"
+    assert d_strum16 == 0, (
+        f"十六分扫弦在 120 BPM（8 发音/秒）属常规动作，不该吃速率罚分，实际差 {d_strum16}"
     )
 
     # ── 3. 缺省降级：SelectionContext() 全空 与 旧式默认调用 等价 ──

@@ -371,11 +371,18 @@ W_CONTINUITY = 1.5     # 整段编排 DP 的模板延续性罚分：相邻和弦
                        # 技法突变比同技法换模板更刺耳，故技法连贯性罚得更重。
 W_TECHNIQUE_CONTIGUITY = 4.0  # 整段编排 DP 的技法连贯性罚分：相邻和弦扫/拆技法突变时加。
                        # 避免「扫弦-分解-扫弦」反复跳，保留段落内技法统一感。
-BPM_HIGH_THRESHOLD = 140  # 高速门槛：bpm 高于此值时，过密模板按 W_BPM_HIGH 罚分（手指/拨片极限）。
 BPM_LOW_THRESHOLD = 70    # 慢速门槛：bpm 低于此值时，高密度连续扫弦按 W_BPM_LOW 轻微罚分（慢歌分解更顺）。
-W_BPM_HIGH = 3.0       # 高 BPM 下每超出密度阈值 1.0 的代价。密度越高的模板越受罚，模拟可演奏性边界。
-                       # 阈值标定：16 分音符密集分解（53231323 16分，密度 1.0）在 180 BPM 下一拍内
-                       # 4 次拨弦已接近指弹极限，需让位低密度模板。
+# 可演奏性按**绝对发音速率**建模（见 pattern_cost 的 BPM 段）。
+ONSETS_PER_BEAT_AT_FULL_DENSITY = 4.0  # density 1.0 = 十六分音符 = 4 发音/拍。
+MAX_ONSETS_PER_SEC = 5.0   # **分解/拨弦**可持续的发音速率上限（发音/秒）。标定：指弹分解的
+                           # 舒适区约 3–4 发音/秒，5.0 之上开始明显吃力（八分音符在 150 BPM
+                           # 拍速下正好 5.0；176 BPM 的八分是 5.9，应让位更疏的型）。
+MAX_ONSETS_PER_SEC_STRUM = 10.0  # **扫弦**的上限远高于逐弦拨：拨片连续上下扫，十六分音符在
+                           # 120 BPM 就是 8 发音/秒，是流行扫弦的常规动作，不能按分解的尺度罚。
+                           # 分开标定是必须的——单一上限要么放过 176 BPM 的八分分解，要么把
+                           # 常规的十六分扫弦也罚掉（后者会让 onset_density 驱动的密度响应失效）。
+W_RATE_HIGH = 2.0          # 超上限每 1 发音/秒的罚分。3/4 分解在 176 BPM 下超出 0.87 → 罚 1.74，
+                           # 足以压过 W_SECTION_STRUM(2.0) 给分解的净优势（实测该处约 1.33）。
 W_BPM_LOW = 1.5        # 低 BPM 下高密度连续扫弦的罚分。慢歌用分解更顺，连续扫弦在低 BPM 下听起来
                        # 「冲」，与技法基线互补（基线管整段扫/拆，此维度管密度细节）。
 W_ONSET_AUDIO = 0.6    # 实测起音密度在目标密度融合里的权重（静态段落表占 1-W=0.4）。音频主导：
@@ -585,11 +592,19 @@ def pattern_cost(
             cost += W_TIME_SIG_NUMERATOR
 
     # BPM 可演奏性：仅 ctx 显式给 bpm 时介入。
-    # 高 BPM（> BPM_HIGH_THRESHOLD）：过密模板按超出密度阈值罚分，模拟手指/拨片极限。
-    # 低 BPM（< BPM_LOW_THRESHOLD）：高密度连续扫弦轻微罚分，慢歌分解更顺。
+    # ★ 高 BPM 侧按**绝对发音速率**（发音/秒）罚，不按相对密度 —— 相对密度会漏掉
+    #   最常见的一档：八分音符分解的 density 恰为 0.5，而旧阈值是 `density > 0.5`，
+    #   于是 (0.5-0.5)*W = 0，**任何 BPM 下八分音符都零罚分**（实测 3/4 分解
+    #   `532132 (8分)` 在 bpm 60/88/120/176 下选型结果完全一样）。可演奏性取决于
+    #   每秒拨几次，与记谱单位无关：同一个八分型在 176 BPM 是 5.9 发音/秒（弹不动），
+    #   在 88 BPM 只有 2.9（轻松）。故改用 `density × 4 × bpm / 60`（density 1.0
+    #   = 十六分 = 4 发音/拍）。
+    #   低 BPM 侧保持相对密度语义：那里管的是「慢歌连续扫弦听着冲」，是口味不是极限。
     if ctx.bpm is not None:
-        if ctx.bpm > BPM_HIGH_THRESHOLD and density > 0.5:
-            cost += (density - 0.5) * W_BPM_HIGH
+        onsets_per_sec = density * ONSETS_PER_BEAT_AT_FULL_DENSITY * ctx.bpm / 60.0
+        ceiling = MAX_ONSETS_PER_SEC_STRUM if pattern.is_strum else MAX_ONSETS_PER_SEC
+        if onsets_per_sec > ceiling:
+            cost += (onsets_per_sec - ceiling) * W_RATE_HIGH
         if ctx.bpm < BPM_LOW_THRESHOLD and pattern.is_strum and density > 0.5:
             cost += (density - 0.5) * W_BPM_LOW
 
