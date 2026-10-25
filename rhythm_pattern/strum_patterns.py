@@ -26,8 +26,8 @@
    ``"fingerpicking"`` / ``"arpeggio"`` 时扫弦模板罚分、为 ``"strum"`` 时分解/
    琶音模板罚分（``"arpeggio"`` 宽匹配，分解与琶音均不罚）；``"mixed"`` /
    ``None`` 不罚，让密度/段落契合自己选。这是段落级混排的关键维度。此外，
-   ``"mixed"`` / ``None`` 下还有**段落技法先验**（软罚）：主歌/尾奏（verse/outro）
-   下扫弦模板加 ``W_SECTION_STRUM``——弹唱惯例主歌铺垫用分解、不直接上扫弦；
+   ``"mixed"`` / ``None`` 下还有**段落技法先验**（软罚）：铺垫段（verse / prechorus /
+   outro）下扫弦模板加 ``W_SECTION_STRUM``——弹唱惯例铺垫用分解、不直接上扫弦；
    软罚只降顺位不排除（强风格证据/实测极密下扫弦仍可胜出），显式基线给出时
    跳过（不叠加）。
 5. **密度贴合**：模板密度与该段落 + 和弦位置的目标密度之差。
@@ -123,9 +123,9 @@ class SelectionContext:
         ``W_TECHNIQUE_SOFT``（分解优先，真琶音仍可凭 tail 奖励收束）；
         ``"arpeggio"`` 宽匹配：分解与琶音都不罚；``mixed`` / ``None``（默认）不罚。
         段落级混排的关键维度。**显式基线还压住段落技法先验**：``mixed`` / ``None``
-        下 verse/outro 段落的扫弦模板会吃 ``W_SECTION_STRUM`` 软罚（弹唱惯例：
-        主歌不直接上扫弦，软罚降顺位不排除），显式给出基线（歌曲侧实测证据）时
-        该先验跳过、不叠加。
+        下铺垫段（verse / prechorus / outro）的扫弦模板会吃 ``W_SECTION_STRUM``
+        软罚（弹唱惯例：主歌与预副歌不直接上扫弦、扫弦留给副歌，软罚降顺位不排除），
+        显式给出基线（歌曲侧实测证据）时该先验跳过、不叠加。
     time_signature
         拍号 ``(分子, 分母)``，如 ``(4, 4)`` / ``(3, 4)`` / ``(6, 8)``。分子非 4 时，
         对 ``motif_beats=4`` 的 4 拍周期模板罚分（3/4 拍下 4 拍动机天然不周期对齐）。
@@ -318,6 +318,13 @@ W_WHOLE_MOTIF = 2.0    # 整动机奖励：beats 恰等于 motif_beats 且 ideal
                        # 的模板减分。这类「专属整动机」（如 4 拍周期的 pop D-DU-U-DU、4 拍 53231323
                        # 8 分分解）占满正好一个动机时最顺，奖励压住高密度通用短动机的密度优势。
                        # 只在「占满一个专属动机」时触发，不泛化到任意整数倍，避免跨技法倾斜。
+W_TILE_MOTIF = 2.0     # 整动机平铺奖励（**只给扫弦**）：beats 是 motif_beats 的整数倍且大于它时减分。
+                       # 扫弦的动机是「下手 + 回手」的周期动作，2 拍的 D-DU 平铺成 4 拍就是
+                       # D-DU-D-DU（民谣扫弦的常规形态），与 4 拍动机的 D-DU-U-DU 同属「一个乐句的
+                       # 扫法」；不给它这一档，2 拍动机的扫弦在 4 拍槽位上就白让 W_WHOLE_MOTIF 的
+                       # 2.0（实测 4 拍副歌里 folk D-DU 因此永远输给 pop D-DU-U-DU）。
+                       # 量级取 W_WHOLE_MOTIF：4 拍槽位上两者同价，胜负交给段落/标签/密度。
+                       # 分解不给：`5323` 平铺（5323-5323）与专门的 4 拍循环 `53231323` 不是一回事。
 W_STRUM_MUTED = 1.2    # 扫弦可行性：高音侧闷音（丢顶音）每个的罚分
 W_INNER_MUTE = 1.0     # 扫弦可行性：内部闷音（扫弦要精确挡）每个的罚分
 W_STYLE_MISMATCH = 5.0 # 风格不匹配：模板风格 != 请求风格时的固定罚分（不剔除，仅降级）
@@ -327,16 +334,25 @@ W_TAGS = 5.0           # 标签不匹配度（0..1）的代价系数。musicnn �
                        # 维度主导但不一票否决。模板无 tags 或 ctx 无 musicnn_tags 时退回
                        # W_STYLE_MISMATCH（向后兼容）。
 W_TECHNIQUE = 6.0      # 技法基线不符：段落技法基线与模板技法不一致时的固定罚分（段落级混排关键维度）
-W_SECTION_STRUM = 2.0  # 段落技法先验（软罚）：主歌/尾奏（verse/outro）下扫弦模板的固定罚分。
-                       # 弹唱惯例：主歌铺垫用分解、副歌爆发用扫弦，主歌不该直接上扫弦。软罚而非
-                       # W_TECHNIQUE 重罚——只降顺位不排除：4 拍长和弦选分解（密度+整动机奖励
-                       # 已如此），2 拍短和弦翻向 1 拍短分解动机（arpeggio placeholder 等，
-                       # 放得进 2 拍和弦）；强证据下扫弦仍可胜出（musicnn rock/fast 标签、
-                       # 实测极密 onset 把 rock 8th down 等重新拉回首位）。
+W_SECTION_STRUM = 2.0  # 段落技法先验（软罚）：铺垫段（见 _SECTION_STRUM_PRIOR）下扫弦模板的
+                       # 固定罚分。弹唱惯例：主歌/预副歌铺垫用分解、副歌爆发用扫弦，铺垫段不该
+                       # 直接上扫弦。软罚而非 W_TECHNIQUE 重罚——只降顺位不排除：4 拍长和弦选
+                       # 分解（密度+整动机奖励已如此），2 拍短和弦翻向 1 拍短分解动机（arpeggio
+                       # placeholder 等，放得进 2 拍和弦）；强证据下扫弦仍可胜出（musicnn
+                       # drums/loud 标签、实测极密 onset 把 16 分扫弦等重新拉回首位）。
                        # technique_baseline 显式给出（strum/fingerpicking/arpeggio，歌曲侧
                        # 实测证据）时跳过——两个维度不叠加，显式基线优先于静态段落先验；
                        # mixed/None（未提供基线）时正常生效。稀疏扫弦（boom-chick，密度 0.25）
                        # 不豁免：密度维度自然保住它在极疏场景的竞争力。
+_SECTION_STRUM_PRIOR = frozenset({"verse", "prechorus", "outro"})
+"""段落技法先验生效的段落集合：主歌 / 预副歌 / 尾奏。
+
+预副歌（prechorus）与主歌同属「铺垫」侧：情绪还在往上推、扫弦是留给副歌的爆发点，
+所以它跟主歌一样压扫弦。此前只有 verse/outro 在此集合里，预副歌既不罚扫弦、
+目标密度又比主歌高一档（``_target_density`` 0.5 vs 0.35），musicnn 一旦给
+pop/fast/drums 之类的标签就整段翻成扫弦——用户报的「预副歌也应用扫弦节奏型」。
+逐和弦路径（:func:`arrange_progression`）靠这里的软罚压低扫弦；全曲统一选型
+（:func:`plan_song_rhythm`）另有更硬的段落族先验 :data:`_SECTION_FAMILY_PRIOR`。"""
 W_TECHNIQUE_SOFT = 2.0 # 技法基线近邻不符：fingerpicking 基线对真琶音（technique="arpeggio"）模板的
                        # 轻罚。fingerpicking（分解逐弦拨完整律动）与 arpeggio（一串音快速依次拨出的
                        # 单次手势）同为拨弦类但听感/用途不同：分解是段落主体，真琶音是收束手势
@@ -531,11 +547,12 @@ def pattern_cost(
         cost += W_TECHNIQUE_SOFT
     elif (
         technique_baseline in (None, "mixed")
-        and section in ("verse", "outro")
+        and section in _SECTION_STRUM_PRIOR
         and pattern.is_strum
     ):
-        # 段落技法先验（软罚）：无显式基线时，弹唱惯例「主歌/尾奏铺垫用分解、副歌爆发
-        # 用扫弦」自动生效——verse/outro 下扫弦模板加 W_SECTION_STRUM 软罚。与上面的
+        # 段落技法先验（软罚）：无显式基线时，弹唱惯例「主歌/预副歌/尾奏铺垫用分解、
+        # 副歌爆发用扫弦」自动生效——_SECTION_STRUM_PRIOR 里的段落扫弦模板加
+        # W_SECTION_STRUM 软罚。与上面的
         # 显式基线互斥（elif）：technique_baseline 是歌曲侧实测证据，优先于静态段落
         # 先验，两个维度不叠加——strum 基线的摇滚主歌不被静态先验压、fingerpicking
         # 基线已有 W_TECHNIQUE 重罚不重复加。mixed 语义是「主歌拆副歌扫之类混排，
@@ -573,6 +590,24 @@ def pattern_cost(
         and pattern.ideal_beats[0] == pattern.motif_beats
     ):
         cost -= W_WHOLE_MOTIF
+    # 整动机平铺奖励（**只给扫弦、且动机至少 2 拍**）：beats 是 motif_beats 的整数倍
+    # 且大于它时减分。扫弦的动机是「下手 + 回手」的周期性手部动作：2 拍的 D-DU 平铺成
+    # 4 拍就是 D-DU-D-DU——民谣扫弦的常规形态，与 4 拍动机的 D-DU-U-DU 同属「一个乐句
+    # 的扫法」，不该因为它是「2 拍动机」就在 4 拍槽位上白让 W_WHOLE_MOTIF 的分（实测：
+    # 4 拍副歌里 folk D-DU 会因此输给同为扫弦的 pop D-DU-U-DU 整整 2.0）。
+    # 1 拍动机（boom-chick、rock 8th down 这类）不给：它不是「乐句级的扫法」，只是
+    # 「每拍扫一下」，平铺到 2/4 拍什么都不代表——给了它，boom-chick 会在 2 拍和弦上
+    # 白拿 2.0 把真正的 2 拍扫弦模板（folk D-DU）压掉（实测 7.02 vs 8.02）。
+    # 分解不给此奖励：分解的动机是「一条指法循环」，`5323` 平铺（5323-5323）与专门的
+    # 4 拍循环 `53231323` 不是一回事，后者才是民谣的完整动作——所以分解仍只认
+    # 「专属整动机」（上面的分支），不因整倍数平铺加分。
+    elif (
+        pattern.is_strum
+        and pattern.motif_beats >= 2
+        and beats > pattern.motif_beats
+        and beats % pattern.motif_beats == 0
+    ):
+        cost -= W_TILE_MOTIF
 
     # 拍号契合：模板自带 time_signature，与 ctx 拍号不一致时分两档：
     # - 分母不同（/4 vs /8）：tick 单位不同（16 分位 vs 8 分位），栅格语义不兼容，
@@ -1008,6 +1043,22 @@ W_SHORT_FALLBACK = 1.0
 每个和弦的代价。让「覆盖更多和弦」的基础模板在分数接近时胜出——基础模板覆盖
 得越全，全曲实际用到的模板数越少。"""
 
+_SECTION_FAMILY_PRIOR: dict[str, str] = {"prechorus": _FAMILY_PLUCK}
+"""段落选族的**硬**先验：预副歌固定走拨弦（分解）族。
+
+预副歌不是副歌的前半小节——它是「主歌的延伸」，情绪还在往上推，扫弦是要留给
+副歌的爆发点。弹唱惯例因此是「主歌分解 → 预副歌分解 → 副歌扫弦」，能量台阶在
+副歌那一层才跳。逐和弦的软罚（``_SECTION_STRUM_PRIOR``，``W_SECTION_STRUM``）
+在这里不够用：全曲统一选型先按段落聚族，预副歌段落一旦被 musicnn 的
+pop/fast/drums 标签（扫弦模板全部命中标签，分解模板全不命中，标签维差 5.0）
+拽到扫弦族，整段就是扫弦——软罚 2.0 压不住，用户报的「预副歌也应用扫弦节奏型」
+正是这一档。故此处用硬先验：该族在 ``kept`` 里就选它，否则退回按分数挑族
+（如全曲只有扫弦族时，别硬造一个分解模板出来）。
+
+只有「选族」受此表约束；族内的基础/短模板仍按 ``pattern_cost`` 评（段落标签、
+密度、拍数照常生效），所以预副歌的分解模板会挑该段最贴合的那一个。
+"""
+
 
 def _technique_family(pattern: StrumPattern) -> str:
     """模板归属的技法族：扫弦一族、分解与琶音合为拨弦一族。
@@ -1048,10 +1099,14 @@ def plan_song_rhythm(
        （主歌分解、副歌扫弦），各自在对方的主场落后是正常的。抒情歌（musicnn
        guitar/slow/soft 标签 + 低起音密度）下扫弦族在每个段落都追不平，整族
        被裁掉——全曲只剩分解，正是「抒情歌连扫弦都不需要」。
-    2. **段落选族 + 各族选基础模板**。段落按「族在该段的代表分」选族；基础模板
-       只在**该族实际要弹的和弦**（其被分配到的段落）上评分——在族用不到的段落
-       上评分会把基础模板拽向别处的口味。覆盖不到的和弦（``beats < min_beats``）
-       改用该族短模板计分并吃 ``W_SHORT_FALLBACK``，故覆盖越全的基础模板越占优。
+    2. **段落选族 + 各族选基础模板**。段落按「族在该段的代表分」选族，但
+       :data:`_SECTION_FAMILY_PRIOR` 点名的段落例外——**预副歌固定走分解族**
+       （主歌的延伸、扫弦留给副歌；软罚压不住 drums/pop 标签，故此处定族）；
+       基础模板只在**该族实际要弹的和弦**（其被分配到的段落）上评分——在族用
+       不到的段落上评分会把基础模板拽向别处的口味。覆盖不到的和弦
+       （``beats < min_beats``）改用该族短模板计分并吃 ``W_SHORT_FALLBACK``，
+       故覆盖越全的基础模板越占优。先验族若被前面的裁族步骤裁掉，会在族数上限
+       允许时补回来，保证「预副歌分解」真有族可用。
     3. **逐和弦分配**。取该段所辖族的基础模板；和弦拍数放不下它时
        （``beats < min_beats``）退到该族的**短模板**（``min_beats == 1``，任何
        拍数都放得下）——短模板全曲复用同一个，不是每个短和弦另选。
@@ -1071,8 +1126,8 @@ def plan_song_rhythm(
         ``style`` / ``technique_baseline`` / ``max_stretch`` 组装。
     chord_ctxs
         逐和弦上下文，与 ``progression`` 等长同序，承载该和弦所属段落的
-        ``section`` / ``musicnn_tags`` / ``onset_density``。段落差异（主歌该分解、
-        副歌该扫弦）全靠它表达——这正是「段落决定用两个基本节奏型里的哪一个」。
+        ``section`` / ``musicnn_tags`` / ``onset_density``。段落差异（主歌/预副歌该
+        分解、副歌该扫弦）全靠它表达——这正是「段落决定用两个基本节奏型里的哪一个」。
         ``None`` 时全曲用同一个 ``ctx``。
     max_families
         保留的技法族上限，默认 2（一分解一扫弦）。传 1 则强制全曲单一技法族。
@@ -1178,13 +1233,24 @@ def plan_song_rhythm(
         idxs_by_section[sec].append(i)
 
     def pick_short(fam: str, idxs: Sequence[int]) -> StrumPattern | None:
-        """族内 ``min_beats==1`` 的模板中，在 ``idxs`` 上平均代价最低者。
+        """族内「放得下 ``idxs`` 里最短那个和弦」的模板中，平均代价最低者。
 
-        ``min_beats==1`` 保证它放得进任何拍数，是「基础模板放不下的短和弦」的
-        兜底。族内若无此类模板（数据源不全）返回 ``None``。
+        ``min_beats <= min(beats)`` 保证它放得进**每一个**缺口和弦（缺口和弦都比
+        基础模板的 ``min_beats`` 短，故最短的那个放得下就都放得下），是「基础模板
+        放不下的短和弦」的兜底。族内若无此类模板（数据源不全）返回 ``None``。
+
+        ★ 旧实现是硬性 ``min_beats <= 1``，语义上只服务「1 拍和弦」，于是 2 拍
+        缺口和弦拿不到同族的 2 拍模板：副歌基础模板是 4 拍的 ``pop D-DU-U-DU`` 时，
+        段落里的 2 拍和弦会被丢给 ``boom-chick``（唯一的 min_beats==1 扫弦），而
+        真正写在那 2 拍上的 ``folk D-DU``（min_beats==2）永远轮不到——用户报的
+        「2 拍的扫弦总是匹配不到 folk D-DU」正是这一档。按缺口和弦的实际拍数取
+        上限后，2 拍和弦拿到的是同族里写在这 2 拍上的那个模板。
         """
-        cands = [p for p in fam_pool[fam] if p.min_beats <= 1]
-        if not cands or not idxs:
+        if not idxs:
+            return None
+        floor_beats = min(beats_of[i] for i in idxs)
+        cands = [p for p in fam_pool[fam] if p.min_beats <= floor_beats]
+        if not cands:
             return None
         return min(cands, key=lambda p: (mean_cost(p, idxs), p.name))
 
@@ -1228,16 +1294,33 @@ def plan_song_rhythm(
         # 保底：全族都不达标时留最拿手段落差距最小的一族。
         kept = [min(fam_section_cost, key=lambda f: (best_sec_gap(f), f))]
 
-    # 族数上限：超出时按最拿手段落差距裁掉较差的族（确定性排序）。
+    # 段落族先验（硬）：先验点名的族必须在 kept 里，否则「预副歌固定分解」无从落地
+    # ——它可能因为每个段落都差一点点（> W_FAMILY_MARGIN）而被裁掉（如全曲 musicnn
+    # 标签都偏 drums/loud 的摇滚）。补回来时同样受 max_families 约束：调用方显式
+    # 只要单族（抒情歌）时不违背它的上限，宁可按分数退回。
+    prior_fams = [
+        fam for sec, fam in _SECTION_FAMILY_PRIOR.items() if sec in idxs_by_section
+    ]
+    for fam in prior_fams:
+        if fam not in kept and fam in fam_pool and len(kept) < max_families:
+            kept.append(fam)
+
+    # 族数上限：超出时按最拿手段落差距裁掉较差的族（确定性排序）。先验族优先留。
     if len(kept) > max_families:
-        kept.sort(key=lambda f: (best_sec_gap(f), f))
+        kept.sort(key=lambda f: (f not in prior_fams, best_sec_gap(f), f))
         kept = kept[:max_families]
 
     # ── 2. 段落选族：段落决定用两个基本节奏型里的哪一个 ──
-    section_family: dict[str, str] = {
-        sec: min(kept, key=lambda f: (fam_section_cost[f].get(sec, float("inf")), f))
-        for sec in sections_in_order
-    }
+    # 先验段落（预副歌 -> 分解）直接定族；其余段落按「族在该段的代表分」挑。
+    section_family: dict[str, str] = {}
+    for sec in sections_in_order:
+        prior = _SECTION_FAMILY_PRIOR.get(sec)
+        if prior in kept:
+            section_family[sec] = prior
+        else:
+            section_family[sec] = min(
+                kept, key=lambda f: (fam_section_cost[f].get(sec, float("inf")), f)
+            )
     # 该族实际要弹的和弦（其被分配到的段落的全部和弦）。基础模板只在这些和弦上
     # 评分——在族根本用不到的段落上评分，会把基础模板拽向别处的口味（实测：副歌
     # 扫弦族的基础模板被主歌和弦拖成 verse 向的 folk D-DU）。
@@ -1251,21 +1334,24 @@ def plan_song_rhythm(
     for fam in kept:
         idxs = fam_idx[fam]
         cands = fam_pool[fam]
-        short = pick_short(fam, idxs)
 
-        def base_score(p: StrumPattern, idxs=idxs, short=short) -> float:
+        def base_score(p: StrumPattern, idxs=idxs, fam=fam) -> float:
             covered = [i for i in idxs if beats_of[i] >= p.min_beats]
             if not covered:
                 return float("inf")
             score = mean_cost(p, covered)
             missing = [i for i in idxs if beats_of[i] < p.min_beats]
-            if missing and short is not None:
-                # 放不下的和弦按短模板计分，再按缺口比例吃 W_SHORT_FALLBACK——
-                # 覆盖越全的基础模板越占优，全曲模板数因此更少。
-                fallback = mean_cost(short, missing)
-                score = (
-                    score * len(covered) + fallback * len(missing)
-                ) / len(idxs) + W_SHORT_FALLBACK * (len(missing) / len(idxs))
+            if missing:
+                # 放不下的和弦按**这个缺口集合**选出的短模板计分，再按缺口比例吃
+                # W_SHORT_FALLBACK——覆盖越全的基础模板越占优，全曲模板数因此更少。
+                # 短模板按缺口集合现算（而不是全族和弦）：pick_short 的候选上限现在
+                # 跟着缺口和弦的拍数走，拿全族和弦算会把上限拉到该族最长缺口上。
+                sub_short = pick_short(fam, missing)
+                if sub_short is not None:
+                    fallback = mean_cost(sub_short, missing)
+                    score = (
+                        score * len(covered) + fallback * len(missing)
+                    ) / len(idxs) + W_SHORT_FALLBACK * (len(missing) / len(idxs))
             return score
 
         base = min(cands, key=lambda p: (base_score(p), p.name))

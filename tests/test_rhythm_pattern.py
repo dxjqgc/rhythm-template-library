@@ -9,6 +9,7 @@ from pytheory import Fretboard
 
 from rhythm_pattern import (
     RhythmGrid,
+    SelectionContext,
     StrumPattern,
     enumerate_rhythm_patterns,
     get_pattern_source,
@@ -31,8 +32,11 @@ def guitar() -> Fretboard:
 PROGRESSIONS = [
     # (进行, 段落, 风格, 期望首和弦模板集合(其一), 标签)
     ([("C", 4)], "chorus", "pop", {"pop D-DU-U-DU"}, "4拍副歌流行"),
-    ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "pop", {"D-D-DU (1拍16分)"}, "1拍流行副歌"),
-    ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "rock", {"rock 8th down"}, "1拍摇滚副歌"),
+    # 1 拍副歌：⚠ 期望是 DB 现状（1 拍扫弦模板 16 分 D-D-DU / rock 8th down 已在 web
+    # 管理器里删掉，4/4 没有 min_beats==1 的扫弦能用了），所以落回 1 拍分解动机。
+    # 补回 1 拍扫弦模板后要把这两条改回去；期望集跟 DB 走（见库 CLAUDE.md）。
+    ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "pop", {"root-5-top2 (1拍)"}, "1拍流行副歌"),
+    ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "rock", {"root-5-top2 (1拍)"}, "1拍摇滚副歌"),
     # 主歌民谣 4-2-2：4 拍 C 选 53231323 分解，2 拍 G/Am 压向短分解（段落技法先验
     # W_SECTION_STRUM 把主歌扫弦压成次选；1 拍短分解动机放得进 2 拍和弦）。
     ([("C", 4), ("G", 2), ("Am", 2)], "verse", "folk",
@@ -152,13 +156,20 @@ class TestStyleMismatch:
     """风格不匹配时降级但不剔除测试。"""
 
     def test_style_mismatch_falls_back(self, guitar):
-        """请求 rock 风格时，1 拍副歌应选 rock 模板而非 pop。"""
+        """请求 rock 风格时，1 拍副歌应选 rock 模板而非 pop。
+
+        用 6/8 来验：4/4 的 1 拍 rock 扫弦（rock 8th down）已在 web 管理器里删掉，
+        现存的 rock 模板只剩 `6/8 rock dotted down`；它无风格罚分，而同一槽位上的
+        pop/folk 模板都要吃 W_STYLE_MISMATCH。
+        """
         events = enumerate_rhythm_patterns(
-            [("C", 1), ("G", 1)], guitar, section="chorus", style="rock"
+            [("C", 1), ("G", 1)], guitar,
+            ctx=SelectionContext(
+                section="chorus", style="rock", time_signature=(6, 8),
+            ),
         )
-        # rock 8th down 在 rock 风格下应被偏好（无风格罚分）。
-        assert all(e.pattern.name == "rock 8th down" for e in events), (
-            f"rock 风格应选 rock 8th down，实际 {[e.pattern.name for e in events]}"
+        assert all(e.pattern.name == "6/8 rock dotted down" for e in events), (
+            f"rock 风格应选 6/8 rock dotted down，实际 {[e.pattern.name for e in events]}"
         )
 
     def test_fallback_when_no_style_match(self, guitar):
@@ -206,8 +217,14 @@ class TestMotifTiling:
 
     def test_integer_multiple_tiles_full_motif(self):
         """beats 是 motif_beats 整数倍时，平铺完整动机。"""
-        # pop 8th-notes: motif 1 拍 (D8分 + U8分, 各 duration=2)，占 4 拍应平铺 4 遍。
-        p = next(p for p in ALL_PATTERNS if p.name == "pop 8th-notes")
+        # 内联构造「1 拍 = D8分 + U8分」的动机（不再按名字取 DB 模板：模板只存在于
+        # templates.json，web 管理器一删就 StopIteration）。占 4 拍应平铺 4 遍。
+        p = StrumPattern(
+            name="t_8th",
+            grid_motif=(Stroke("D", 2), Stroke("U", 2)),
+            motif_beats=1, min_beats=1, ideal_beats=(1, 2, 4),
+            sections=("chorus",), style="pop",
+        )
         grid = p.grid_for(4)
         assert grid.cells == p.grid_motif * 4
         assert sum(c.duration for c in grid.cells) == 16
@@ -259,6 +276,115 @@ class TestMotifTiling:
         grid_full = motif.grid_for(4)
         assert grid_full.cells == motif.grid_motif
         assert sum(c.duration for c in grid_full.cells) == 16
+
+
+class TestTileMotifReward:
+    """整动机平铺奖励 ``W_TILE_MOTIF``：2 拍以上的扫弦动机平铺到整数倍拍数时减分。
+
+    扫弦的动机是「下手 + 回手」的周期动作：2 拍动机（folk D-DU）占 4 拍就是两遍
+    D-DU-D-DU，与 4 拍动机（pop D-DU-U-DU）同属「一个乐句的扫法」。此前只有
+    「专属整动机」（ideal_beats 单元素）能拿 ``W_WHOLE_MOTIF``，2 拍动机在 4 拍上
+    白让 2.0 —— 实测 4 拍副歌里 folk D-DU 永远输给 pop D-DU-U-DU。
+    """
+
+    def _cost(self, pattern, beats, **ctx_kwargs):
+        from rhythm_pattern.strum_patterns import pattern_cost, SelectionContext
+        return pattern_cost(
+            pattern, beats=beats, muted=(0, 0, 0), density_neighbor_delta=None,
+            ctx=SelectionContext(time_signature=(4, 4), bpm=92, **ctx_kwargs),
+        )
+
+    def _pattern(self, name):
+        return next(p for p in ALL_PATTERNS if p.name == name)
+
+    def test_two_beat_strum_reaches_four_beats(self, guitar):
+        """民谣标签的副歌：4 拍和弦现在能选中 2 拍动机的 folk D-DU。"""
+        ev = enumerate_rhythm_patterns(
+            [("C", 4)], guitar,
+            ctx=SelectionContext(
+                section="chorus", style="pop", time_signature=(4, 4), bpm=92,
+                musicnn_tags=(("guitar", 0.85), ("country", 0.7), ("soft", 0.6)),
+            ),
+        )
+        assert ev[0].pattern.name == "folk D-DU", (
+            f"民谣标签的 4 拍副歌应选 folk D-DU，实际 {ev[0].pattern.name}"
+        )
+
+    def test_one_beat_motif_gets_no_tile_reward(self, guitar):
+        """1 拍动机不享受平铺奖励：boom-chick 在 2 拍上仍比 folk D-DU 贵。
+
+        1 拍动机只是「每拍扫一下」，不是乐句级扫法；给了它奖励，它会在 2 拍和弦上
+        白拿 2.0 把真正的 2 拍扫弦模板压掉（实测 7.02 vs 8.02）。
+        """
+        tags = (("drums", 0.85), ("loud", 0.8))
+        folk = self._cost(self._pattern("folk D-DU"), 2, section="chorus",
+                          style="pop", musicnn_tags=tags, onset_density=0.55)
+        boom = self._cost(self._pattern("boom-chick"), 2, section="chorus",
+                          style="pop", musicnn_tags=tags, onset_density=0.55)
+        assert folk < boom, f"2 拍上 folk D-DU({folk:.2f}) 应比 boom-chick({boom:.2f}) 便宜"
+
+    def test_pop_chorus_still_prefers_four_beat_motif(self, guitar):
+        """流行标签的副歌：4 拍仍选 pop D-DU-U-DU（平铺奖励不得盖过标签/整动机）。"""
+        ev = enumerate_rhythm_patterns(
+            [("C", 4)], guitar,
+            ctx=SelectionContext(
+                section="chorus", style="pop", time_signature=(4, 4), bpm=92,
+                musicnn_tags=(("pop", 0.7), ("drums", 0.65), ("fast", 0.6)),
+            ),
+        )
+        assert ev[0].pattern.name == "pop D-DU-U-DU", (
+            f"流行标签的 4 拍副歌仍应是 pop D-DU-U-DU，实际 {ev[0].pattern.name}"
+        )
+
+
+class TestShortTemplateScope:
+    """``plan_song_rhythm`` 的短模板口径：族内「放得下缺口和弦」的模板。
+
+    旧实现硬性 ``min_beats <= 1``，只服务 1 拍和弦，于是 2 拍缺口和弦拿不到同族的
+    2 拍模板：副歌基础模板是 4 拍的 pop D-DU-U-DU 时，2 拍和弦被丢给 boom-chick，
+    写在那 2 拍上的 folk D-DU 永远轮不到。
+    """
+
+    @staticmethod
+    def _plan(guitar, section_tags, cell, section="chorus"):
+        from rhythm_pattern import SelectionContext, plan_song_rhythm
+        prog, ctxs = [], []
+        for beats in cell:
+            for _ in range(2):
+                prog.append(("C", beats))
+                ctxs.append(SelectionContext(
+                    section=section, style="pop", time_signature=(4, 4), bpm=92,
+                    musicnn_tags=section_tags, onset_density=0.55,
+                ))
+        base = SelectionContext(style="pop", time_signature=(4, 4), bpm=92)
+        return plan_song_rhythm(prog, guitar, ctx=base, chord_ctxs=ctxs, max_families=2)
+
+    def test_two_beat_gap_gets_two_beat_template(self, guitar):
+        """副歌混排 4-2-2：2 拍和弦拿到族内 2 拍模板，而不是 1 拍兜底。"""
+        pop = (("pop", 0.7), ("drums", 0.65), ("fast", 0.6))
+        planned = self._plan(guitar, pop, [4, 2, 2])
+        two = [e for e in planned if e.beats == 2]
+        assert two, "应包含 2 拍和弦"
+        assert all(e.pattern.min_beats >= 2 for e in two), (
+            f"2 拍和弦应拿到 2 拍模板，实际 {sorted({e.pattern.name for e in two})}"
+        )
+        # 4 拍和弦仍是 4 拍动机的扫弦（不受短模板口径影响）。
+        four = [e for e in planned if e.beats == 4]
+        assert all(e.pattern.min_beats >= 4 for e in four), (
+            f"4 拍和弦仍应是 4 拍模板，实际 {sorted({e.pattern.name for e in four})}"
+        )
+
+    def test_two_beat_gap_beats_one_beat_fallback(self, guitar):
+        """2 拍缺口不落到 1 拍兜底：drums 标签下同样是 folk D-DU，而不是 boom-chick。
+
+        回归：把平铺奖励给到 1 拍动机后，boom-chick 曾以 7.02 压过 folk D-DU 的 8.02。
+        """
+        drums = (("drums", 0.85), ("loud", 0.8))
+        planned = self._plan(guitar, drums, [4, 2, 2])
+        two = [e for e in planned if e.beats == 2]
+        assert two and all(e.pattern.name == "folk D-DU" for e in two), (
+            f"2 拍缺口应拿到 folk D-DU，实际 {sorted({e.pattern.name for e in two})}"
+        )
 
 
 class TestTechniqueBaseline:
@@ -348,21 +474,24 @@ class TestTechniqueBaseline:
 
 
 class TestSectionStrumPrior:
-    """段落技法先验（软罚）：verse/outro 下扫弦模板降顺位。
+    """段落技法先验（软罚）：铺垫段（verse / prechorus / outro）下扫弦模板降顺位。
 
-    弹唱惯例「主歌铺垫用分解、副歌爆发用扫弦」的静态先验：无显式 technique_baseline
-    时 verse/outro 段落的扫弦模板加 W_SECTION_STRUM 软罚。软罚只降顺位不排除——
-    2 拍短和弦放不下 4 拍分解动机时仍可退回短扫弦（基准集 verse/folk 4-2-2 不变）。
+    弹唱惯例「主歌/预副歌铺垫用分解、副歌爆发用扫弦」的静态先验：无显式
+    technique_baseline 时铺垫段的扫弦模板加 W_SECTION_STRUM 软罚。软罚只降顺位
+    不排除——2 拍短和弦放不下 4 拍分解动机时仍可退回短扫弦（基准集 verse/folk
+    4-2-2 不变）。预副歌与主歌同属铺垫侧（扫弦留给副歌的爆发点），此前只有
+    verse/outro 在此集合里，于是预副歌一旦被 musicnn 的 pop/fast/drums 标签拉动
+    就整段变扫弦——这是「预副歌也应用扫弦节奏型」的第一层修复。
     """
 
     def test_verse_outro_strum_penalized(self, guitar):
-        """pattern_cost 层：verse/outro 下扫弦模板吃 W_SECTION_STRUM，其他段落不吃。"""
+        """pattern_cost 层：铺垫段吃 W_SECTION_STRUM，chorus/bridge 不吃。"""
         from rhythm_pattern.strum_patterns import W_SECTION_STRUM, pattern_cost, SelectionContext
         strum = next(p for p in ALL_PATTERNS if p.is_strum and p.time_signature == (4, 4))
         common = dict(beats=2, muted=(0, 0, 0), density_neighbor_delta=None)
         for section, expect_penalty in (
-            ("verse", True), ("outro", True),
-            ("chorus", False), ("prechorus", False), ("bridge", False),
+            ("verse", True), ("prechorus", True), ("outro", True),
+            ("chorus", False), ("bridge", False), ("intro", False),
         ):
             c_prior = pattern_cost(strum, **common, ctx=SelectionContext(section=section, style="pop"))
             c_none = pattern_cost(
@@ -427,6 +556,102 @@ class TestSectionStrumPrior:
         assert len(ev) == 3
         # 不强制后两个必须是扫弦，只断言能产出结果且长和弦是分解。
         assert not ev[0].pattern.is_strum
+
+
+class TestPrechorusPluckPrior:
+    """预副歌固定走分解族（``plan_song_rhythm`` 的段落族硬先验）。
+
+    逐和弦的软罚（``W_SECTION_STRUM`` 2.0）压不住标签维（``W_TAGS`` 5.0）：预副歌
+    一旦被 musicnn 的 drums/loud/pop/fast 标签命中扫弦模板、而分解模板
+    （guitar/slow/soft）全不命中，整段就翻成扫弦——用户报的「预副歌也应用扫弦
+    节奏型」。全曲统一选型因此对预副歌用硬先验（见 ``_SECTION_FAMILY_PRIOR``）：
+    拨弦族在 kept 里就选它，chorus 的分族行为不受影响。
+    """
+
+    STRUM_TAGS = (("drums", 0.85), ("loud", 0.8), ("fast", 0.7), ("pop", 0.6))
+    PLUCK_TAGS = (("guitar", 0.85), ("slow", 0.7), ("soft", 0.6))
+    ROCK_TAGS = (("rock", 0.9), ("loud", 0.85), ("drums", 0.8), ("metal", 0.5))
+
+    @staticmethod
+    def _plan(guitar, tags_by_section, layout, *, beats=4, bpm=100, max_families=2):
+        """按 ``layout``（``[(section, 小节数), ...]``）铺一首歌并返回 (secs, events)。"""
+        from rhythm_pattern import SelectionContext, plan_song_rhythm
+        prog, secs, ctxs = [], [], []
+        for sec, bars in layout:
+            for _ in range(bars * 4):
+                prog.append(("C", beats))
+                secs.append(sec)
+                ctxs.append(SelectionContext(
+                    section=sec, style="pop", time_signature=(4, 4), bpm=bpm,
+                    musicnn_tags=tags_by_section[sec],
+                ))
+        base = SelectionContext(style="pop", time_signature=(4, 4), bpm=bpm)
+        planned = plan_song_rhythm(
+            prog, guitar, ctx=base, chord_ctxs=ctxs, max_families=max_families,
+        )
+        return secs, planned
+
+    @staticmethod
+    def _is_strum_by_section(secs, planned):
+        out: dict[str, set[bool]] = {}
+        for sec, ev in zip(secs, planned):
+            out.setdefault(sec, set()).add(ev.pattern.is_strum)
+        return out
+
+    def test_prechorus_pluck_despite_strum_tags(self, guitar):
+        """预副歌挂着 drums/loud 标签时仍走分解，副歌照旧扫弦。"""
+        tags = {
+            "verse": self.PLUCK_TAGS,
+            "prechorus": self.STRUM_TAGS,
+            "chorus": self.STRUM_TAGS,
+        }
+        secs, planned = self._plan(
+            guitar, tags, [("verse", 2), ("prechorus", 1), ("chorus", 2)]
+        )
+        fams = self._is_strum_by_section(secs, planned)
+        assert fams["prechorus"] == {False}, (
+            f"预副歌应用分解，实际 {sorted({e.pattern.name for s, e in zip(secs, planned) if s == 'prechorus'})}"
+        )
+        assert fams["chorus"] == {True}, "副歌应仍走扫弦（先验只针对预副歌）"
+
+    def test_prechorus_pluck_when_verse_present_and_rock_tags(self, guitar):
+        """全曲都是摇滚标签（扫弦族处处最优）时，预副歌依然走分解。"""
+        tags = {sec: self.ROCK_TAGS for sec in ("verse", "prechorus", "chorus")}
+        secs, planned = self._plan(
+            guitar, tags, [("verse", 2), ("prechorus", 1), ("chorus", 2)]
+        )
+        fams = self._is_strum_by_section(secs, planned)
+        assert fams["prechorus"] == {False}, "摇滚标签下预副歌仍应用分解"
+        assert fams["chorus"] == {True}, "摇滚副歌应仍是扫弦"
+
+    def test_prior_family_kept_when_margin_would_trim_it(self, guitar):
+        """没有主歌的谱（只有预副歌+副歌）：拨弦族本会因差距超门槛被裁掉，
+        先验把它补回来，预副歌才不会落成扫弦。"""
+        tags = {"prechorus": self.STRUM_TAGS, "chorus": self.STRUM_TAGS}
+        for beats in (4, 2, 1):
+            secs, planned = self._plan(
+                guitar, tags, [("prechorus", 1), ("chorus", 2)], beats=beats
+            )
+            fams = self._is_strum_by_section(secs, planned)
+            assert fams["prechorus"] == {False}, (
+                f"{beats} 拍和弦：预副歌应用分解，实际 "
+                f"{sorted({e.pattern.name for s, e in zip(secs, planned) if s == 'prechorus'})}"
+            )
+
+    def test_max_families_one_still_single_family(self, guitar):
+        """``max_families=1`` 时先验不得突破调用方的族数上限（抒情歌路径）。"""
+        tags = {
+            "verse": self.PLUCK_TAGS,
+            "prechorus": self.STRUM_TAGS,
+            "chorus": self.STRUM_TAGS,
+        }
+        _secs, planned = self._plan(
+            guitar, tags, [("verse", 2), ("prechorus", 1), ("chorus", 2)],
+            max_families=1,
+        )
+        assert len({(e.pattern.is_strum) for e in planned}) == 1, (
+            "max_families=1 时全曲应只有一族"
+        )
 
 
 class TestOnsetDensity:

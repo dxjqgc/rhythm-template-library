@@ -21,12 +21,13 @@ ALL_PATTERNS = get_pattern_source().patterns()
 BENCHMARK: list[tuple[list[tuple[str, int]], str, str, list[str]]] = [
     # 4 拍副歌流行 -> 经典 4/4 流行扫弦。
     ([("C", 4)], "chorus", "pop", ["pop D-DU-U-DU"]),
-    # 每和弦 1 拍的流行副歌 -> 16 分「下下下上」撑满短和弦时间。
-    # 注：1 拍和弦时间短，8 分（pop 8th-notes）每拍仅 2 音偏疏，16 分 D-D-DU（密度 1.0）
-    # 更贴副歌饱满度；pop 8th-notes 退守 2 拍副歌甜区（见 _show 演示）。
-    ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "pop", ["D-D-DU (1拍16分)"]),
-    # 每和弦 1 拍的摇滚副歌 -> 全下扫重拍。
-    ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "rock", ["rock 8th down"]),
+    # 每和弦 1 拍的副歌 -> 现阶段实际选到 1 拍分解动机（root-5-top2）。
+    # ⚠ 这不是「音乐上对」的答案，是 DB 现状：1 拍扫弦模板（16 分 D-D-DU、rock 8th
+    # down）在 web 管理器里被删掉了，4/4 只剩 boom-chick(verse) / folk D-DU(min 2) /
+    # pop D-DU-U-DU(min 4)，所以 1 拍副歌和弦只能落回 1 拍分解动机。补回 1 拍扫弦
+    # 模板后这两条期望要跟着改回去。期望集跟 DB 走（见库 CLAUDE.md）。
+    ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "pop", ["root-5-top2 (1拍)"]),
+    ([("C", 1), ("G", 1), ("Am", 1), ("F", 1)], "chorus", "rock", ["root-5-top2 (1拍)"]),
     # 主歌民谣 4-2-2：4 拍 C 用 53231323 分解（民谣经典动作），2 拍 G/Am 也压向分解
     # （arpeggio roll / placeholder / cadence short 等短分解动机）。段落技法先验
     # （W_SECTION_STRUM）把主歌扫弦压成次选——弹唱惯例主歌铺垫用分解；2 拍短和弦
@@ -393,13 +394,18 @@ def check_selection_context(gtr) -> None:
     # ★ 扫弦与分解的上限必须分开：十六分**扫弦**在 120 BPM 是 8 发音/秒，是流行扫弦的
     #   常规动作；用分解的 5.0 上限去罚它，会把 onset_density 驱动的密度响应整个压平
     #   （后端 test_arrange_onset_density_pulls_target 就是这么红的）。
-    strum16 = next(p for p in ALL_PATTERNS if p.name == "D-D-DU (1拍16分)")
-    _, _, d_strum16 = _delta(strum16, 120, 2)
-    print(f"  D-D-DU(1拍16分) 扫弦  @120: (差 {d_strum16:+.2f})")
-    assert strum16.is_strum, "该模板应为扫弦（回归前提）"
-    assert d_strum16 == 0, (
-        f"十六分扫弦在 120 BPM（8 发音/秒）属常规动作，不该吃速率罚分，实际差 {d_strum16}"
-    )
+    #   ⚠ 模板只存在于 templates.json（web 管理器可删），所以按名字取要容错：删掉时
+    #   跳过这一条断言，而不是让整个 rhythm_main 崩在这行。
+    strum16 = next((p for p in ALL_PATTERNS if p.name == "D-D-DU (1拍16分)"), None)
+    if strum16 is None:
+        print("  skip: DB 里没有 D-D-DU (1拍16分)（模板被删）——跳过扫弦速率上限分档断言")
+    else:
+        _, _, d_strum16 = _delta(strum16, 120, 2)
+        print(f"  D-D-DU(1拍16分) 扫弦  @120: (差 {d_strum16:+.2f})")
+        assert strum16.is_strum, "该模板应为扫弦（回归前提）"
+        assert d_strum16 == 0, (
+            f"十六分扫弦在 120 BPM（8 发音/秒）属常规动作，不该吃速率罚分，实际差 {d_strum16}"
+        )
 
     # ── 3. 缺省降级：SelectionContext() 全空 与 旧式默认调用 等价 ──
     prog_decay = [("C", 4), ("G", 2), ("Am", 2)]
@@ -703,6 +709,8 @@ def check_plan_song_rhythm(gtr) -> None:
     3. **段落分配**：主歌走拨弦、副歌走扫弦（段落决定用两个基本节奏型里的哪一个）。
     4. **短和弦兜底**：``beats < 基础模板 min_beats`` 的和弦退到同族短模板，
        而不是另选一个新模板；全曲模板总数不因此膨胀。
+    5. **预副歌固定分解**：预副歌段落的 musicnn 标签给 drums/loud（扫弦模板全命中、
+       分解模板全不命中，标签维差 5.0）时仍走分解——扫弦留给副歌。
     """
     print("\n=== 全曲统一选型 plan_song_rhythm ===")
     from rhythm_pattern import SelectionContext, arrange_progression, plan_song_rhythm
@@ -787,18 +795,108 @@ def check_plan_song_rhythm(gtr) -> None:
     assert len(ballad_names) <= 2, f"抒情歌应只留 1-2 个分解模板，实际 {ballad_names}"
     print(f"  抒情歌 {len(prog_b)} 和弦: {len(ballad_names)} 种（全拨弦）{sorted(ballad_names)}")
 
-    # ── 4. 短和弦兜底：基础模板放不下的和弦退同族短模板 ──
-    # 上例含 2 拍和弦（基础 4 拍分解放不下），应退到同族 min_beats=1 的短模板。
-    short_used = {e.pattern.name for e in planned if e.pattern.min_beats <= 1}
-    assert short_used, "含 2 拍和弦的歌曲应触发短模板兜底"
-    print(f"  短和弦兜底模板: {sorted(short_used)}")
+    # ── 4. 短和弦兜底：基础模板放不下的和弦退同族「放得下它」的模板 ──
+    # 上例含 2 拍和弦。短模板口径已从「硬性 min_beats==1」改成「族内放得下最短缺口
+    # 和弦」——2 拍和弦因此拿到的是切在 2 拍上的模板（folk D-DU / 5323 …），而不是
+    # 被 1 拍模板平铺（旧行为：2 拍副歌和弦退成 boom-chick）。
+    two_beat_names = {
+        e.pattern.name for e, (_c, b) in zip(planned, prog) if b == 2
+    }
+    assert two_beat_names, "歌曲里含 2 拍和弦，应有对应模板"
+    for e, (_c, b) in zip(planned, prog):
+        if b == 2:
+            assert e.pattern.min_beats >= 2, (
+                f"2 拍和弦应拿到 2 拍模板，实际落到 1 拍兜底 {e.pattern.name}"
+            )
+    print(f"  2 拍和弦模板: {sorted(two_beat_names)}")
 
     # ── max_families=1：强制单族 ──
     one = plan_song_rhythm(prog, gtr, ctx=base, chord_ctxs=ctxs, max_families=1)
     assert len({e.pattern.name for e in one}) <= 2, "max_families=1 时全曲应只剩一族（基础+短）"
     print(f"  max_families=1 -> {sorted({e.pattern.name for e in one})}")
 
-    print("  断言通过: 全曲收敛到 1-2 个基本节奏型；抒情歌单族；短和弦同族兜底")
+    # ── 5. 预副歌固定分解（_SECTION_FAMILY_PRIOR 硬先验）──
+    # 预副歌是主歌的延伸、扫弦留给副歌的爆发点。它的 musicnn 标签往往是
+    # drums/loud/pop（扫弦模板全命中、分解模板全不命中），软罚 2.0 压不住标签
+    # 维 5.0，于是整段翻成扫弦——这正是用户报的「预副歌也应用扫弦节奏型」。
+    PRE_SONG = [
+        ("verse", "verse", [("C", 4), ("G", 2), ("Am", 2), ("F", 4)]),
+        ("pre-chorus", "prechorus", [("Dm", 4), ("G", 2), ("G", 2), ("C", 4)]),
+        ("chorus", "chorus", [("F", 4), ("G", 4), ("C", 4), ("C", 2)]),
+    ]
+    STRUM_TAGS = (("drums", 0.85), ("loud", 0.8), ("fast", 0.7), ("pop", 0.6))
+    PRE_TAGS = {"verse": POP_TAGS["verse"], "prechorus": STRUM_TAGS,
+                "chorus": POP_TAGS["chorus"]}
+    PRE_ONSET = {"verse": 0.42, "prechorus": 0.60, "chorus": 0.70}
+    prog_p, ctxs_p, secs_p = [], [], []
+    for _label, sec, chords in PRE_SONG:
+        for c, b in chords:
+            prog_p.append((c, b))
+            secs_p.append(sec)
+            ctxs_p.append(SelectionContext(
+                section=sec, style="pop", bpm=100, time_signature=(4, 4), max_stretch=4,
+                musicnn_tags=PRE_TAGS[sec], onset_density=PRE_ONSET[sec],
+            ))
+    planned_p = plan_song_rhythm(
+        prog_p, gtr,
+        ctx=SelectionContext(style="pop", bpm=100, time_signature=(4, 4), max_stretch=4),
+        chord_ctxs=ctxs_p,
+    )
+    fam_of_sec: dict[str, set[bool]] = {}
+    for e, sec in zip(planned_p, secs_p):
+        fam_of_sec.setdefault(sec, set()).add(e.pattern.is_strum)
+    assert fam_of_sec["prechorus"] == {False}, (
+        "预副歌应固定走分解（drums/loud 标签下也不该翻成扫弦），实际 "
+        f"{sorted({e.pattern.name for e, s in zip(planned_p, secs_p) if s == 'prechorus'})}"
+    )
+    assert fam_of_sec["chorus"] == {True}, "副歌应仍是扫弦（先验只约束预副歌）"
+    pre_names = sorted({e.pattern.name for e, s in zip(planned_p, secs_p) if s == "prechorus"})
+    print(f"  预副歌（drums/loud 标签）-> 分解 {pre_names}; 副歌 -> 扫弦")
+
+    # ── 6. 短模板口径：族内「放得下缺口和弦」的模板（不再只认 min_beats==1）──
+    # 副歌混排 4-2-2：基础模板是 4 拍扫弦时，2 拍和弦应拿到同族的 2 拍模板
+    # （folk D-DU），而不是退到 1 拍的 boom-chick。旧口径硬性 min_beats<=1，
+    # 于是「2 拍的扫弦总是匹配不到 folk D-DU」。
+    MIX = [("chorus", "chorus", [("C", 4), ("G", 2), ("Am", 2), ("F", 4)])]
+    prog_m, ctxs_m, beats_m = [], [], []
+    for _label, sec, chords in MIX:
+        for c, b in chords:
+            prog_m.append((c, b))
+            beats_m.append(b)
+            ctxs_m.append(SelectionContext(
+                section=sec, style="pop", bpm=100, time_signature=(4, 4), max_stretch=4,
+                musicnn_tags=STRUM_TAGS, onset_density=0.60,
+            ))
+    planned_m = plan_song_rhythm(
+        prog_m, gtr,
+        ctx=SelectionContext(style="pop", bpm=100, time_signature=(4, 4), max_stretch=4),
+        chord_ctxs=ctxs_m,
+    )
+    two = [e for e, b in zip(planned_m, beats_m) if b == 2]
+    assert two and all(e.pattern.min_beats >= 2 for e in two), (
+        "2 拍缺口和弦应拿到族内 2 拍模板（不是 1 拍兜底），实际 "
+        f"{sorted({e.pattern.name for e in two})}"
+    )
+    print(f"  副歌混排 4-2-2: 2 拍和弦 -> {sorted({e.pattern.name for e in two})}")
+
+    # ── 7. 整动机平铺奖励：2 拍动机的扫弦在 4 拍槽位上与 4 拍动机同价 ──
+    # 民谣标签的 4 拍副歌应选 folk D-DU（2 拍动机平铺两遍）；流行标签仍选
+    # 4 拍动机的 pop D-DU-U-DU（标签 + 专属整动机奖励胜出）。
+    for tags, want, label in (
+        (POP_TAGS["verse"], "folk D-DU", "民谣标签"),
+        (POP_TAGS["chorus"], "pop D-DU-U-DU", "流行标签"),
+    ):
+        ev4 = enumerate_rhythm_patterns(
+            [("C", 4), ("G", 4), ("C", 4)], gtr,
+            ctx=SelectionContext(section="chorus", style="pop", bpm=92,
+                                 time_signature=(4, 4), musicnn_tags=tags),
+        )
+        got = ev4[1].pattern.name  # middle 位（避开首尾位置奖励）
+        assert got == want, f"{label}的 4 拍副歌应选 {want}，实际 {got}"
+        print(f"  {label} 4 拍副歌 -> {got}")
+
+    print("  断言通过: 全曲收敛到 1-2 个基本节奏型；抒情歌单族；短和弦同族兜底；"
+          "预副歌固定分解；2 拍缺口拿同族 2 拍模板；2 拍动机扫弦在 4 拍可达")
 
 
 def _iter_ctx_sec(song):

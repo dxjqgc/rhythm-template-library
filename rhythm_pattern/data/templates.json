@@ -45,13 +45,19 @@
       {
         "type": "stroke",
         "direction": "D",
-        "duration": 1,
+        "duration": 2,
         "accent": "default"
       },
       {
         "type": "stroke",
         "direction": "U",
-        "duration": 3,
+        "duration": 1,
+        "accent": "default"
+      },
+      {
+        "type": "stroke",
+        "direction": "D",
+        "duration": 1,
         "accent": "default"
       }
     ],
@@ -75,91 +81,9 @@
     "tags": [
       "guitar",
       "country",
-      "soft"
-    ]
-  },
-  {
-    "id": "pop 8th-notes",
-    "name": "pop 8th-notes",
-    "grid_motif": [
-      {
-        "type": "stroke",
-        "direction": "D",
-        "duration": 2,
-        "accent": "default"
-      },
-      {
-        "type": "stroke",
-        "direction": "U",
-        "duration": 2,
-        "accent": "default"
-      }
-    ],
-    "motif_beats": 1,
-    "min_beats": 1,
-    "ideal_beats": [
-      1,
-      2,
-      4
-    ],
-    "sections": [
-      "chorus",
-      "prechorus"
-    ],
-    "style": "pop",
-    "technique": "strum",
-    "positions": [],
-    "time_signature": [
-      4,
-      4
-    ],
-    "tags": [
-      "pop",
-      "fast",
-      "drums",
-      "beat"
-    ]
-  },
-  {
-    "id": "rock 8th down",
-    "name": "rock 8th down",
-    "grid_motif": [
-      {
-        "type": "stroke",
-        "direction": "D",
-        "duration": 2,
-        "accent": "default"
-      },
-      {
-        "type": "stroke",
-        "direction": "D",
-        "duration": 2,
-        "accent": "default"
-      }
-    ],
-    "motif_beats": 1,
-    "min_beats": 1,
-    "ideal_beats": [
-      1,
-      2,
-      4
-    ],
-    "sections": [
-      "chorus"
-    ],
-    "style": "rock",
-    "technique": "strum",
-    "positions": [],
-    "time_signature": [
-      4,
-      4
-    ],
-    "tags": [
-      "rock",
-      "loud",
-      "fast",
-      "drums",
-      "metal"
+      "soft",
+      "slow",
+      "pop"
     ]
   },
   {
@@ -175,19 +99,13 @@
       {
         "type": "stroke",
         "direction": "D",
+        "duration": 2,
+        "accent": "default"
+      },
+      {
+        "type": "stroke",
+        "direction": "U",
         "duration": 1,
-        "accent": "default"
-      },
-      {
-        "type": "stroke",
-        "direction": "U",
-        "duration": 3,
-        "accent": "default"
-      },
-      {
-        "type": "stroke",
-        "direction": "U",
-        "duration": 4,
         "accent": "default"
       },
       {
@@ -198,8 +116,26 @@
       },
       {
         "type": "stroke",
+        "direction": "D",
+        "duration": 4,
+        "accent": "default"
+      },
+      {
+        "type": "stroke",
+        "direction": "D",
+        "duration": 2,
+        "accent": "default"
+      },
+      {
+        "type": "stroke",
         "direction": "U",
-        "duration": 3,
+        "duration": 1,
+        "accent": "default"
+      },
+      {
+        "type": "stroke",
+        "direction": "D",
+        "duration": 1,
         "accent": "default"
       }
     ],
@@ -223,59 +159,6 @@
       "fast",
       "drums",
       "beat"
-    ]
-  },
-  {
-    "id": "D-D-DU (1拍16分)",
-    "name": "D-D-DU (1拍16分)",
-    "grid_motif": [
-      {
-        "type": "stroke",
-        "direction": "D",
-        "duration": 1,
-        "accent": "default"
-      },
-      {
-        "type": "stroke",
-        "direction": "D",
-        "duration": 1,
-        "accent": "default"
-      },
-      {
-        "type": "stroke",
-        "direction": "D",
-        "duration": 1,
-        "accent": "default"
-      },
-      {
-        "type": "stroke",
-        "direction": "U",
-        "duration": 1,
-        "accent": "default"
-      }
-    ],
-    "motif_beats": 1,
-    "min_beats": 1,
-    "ideal_beats": [
-      1,
-      2
-    ],
-    "sections": [
-      "chorus",
-      "prechorus"
-    ],
-    "style": "pop",
-    "technique": "strum",
-    "positions": [],
-    "time_signature": [
-      4,
-      4
-    ],
-    "tags": [
-      "pop",
-      "fast",
-      "loud",
-      "drums"
     ]
   },
   {
