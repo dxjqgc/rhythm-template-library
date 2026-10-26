@@ -8,8 +8,6 @@ dependencies = [
     "pytheory>=0.57.13",
 ]
 
-[project.scripts]
-rhythm-web = "web_manager.server:main"
 
 [dependency-groups]
 dev = [

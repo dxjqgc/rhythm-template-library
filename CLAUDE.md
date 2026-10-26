@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-吉他弹唱节奏型模板库 + 自动选型/编排，配套指法枚举器与浏览器试听 Web 管理器。三个子包：`rhythm_pattern`（核心）、`chord_fingering`（被依赖的基础库）、`web_manager`（可丢弃的 Web CRUD + 试听）。构建在 `pytheory` 之上，对任意调弦中立。
+吉他弹唱节奏型模板库 + 自动选型/编排，配套指法枚举器与宿主应用桥接层。两个核心子包：`rhythm_pattern`（核心）、`chord_fingering`（被依赖的基础库）；`web_manager` 只剩可丢弃的 `adapter.py` 桥接层（独立 Web UI 已移除）。构建在 `pytheory` 之上，对任意调弦中立。
 
 ## 环境
 
@@ -19,7 +19,7 @@ uv run pytest tests/test_serialization.py::TestX    # 单个测试类/函数
 uv run rhythm_main.py     # 节奏型选型/编排审计（内联断言，见下）
 uv run main.py            # 指法枚举验证（内联断言 + 基准集）
 
-uv run rhythm-web         # 启 Web 管理器，默认 127.0.0.1:8000（DB 缺失则拒绝启动）
+# 模板编辑：宿主应用运营控制台（GuitarSheetGenerator admin_web 的 #/rhythm）
 
 uv run python -m rhythm_pattern.serialization --migrate-legacy  # 旧 None 格 DB → 新 duration 格
 ```
@@ -76,23 +76,23 @@ uv run python -m rhythm_pattern.serialization --migrate-legacy  # 旧 None 格 D
 
 ### 数据源：模板唯一真源是 templates.json（`rhythm_pattern/strum_patterns.py` 的数据源一节）
 
-**代码里没有模板表。** 模板只存在于 `rhythm_pattern/data/templates.json`（web 管理器的 CRUD 目标），选型器经 `PatternSource` 协议读它：
+**代码里没有模板表。** 模板只存在于 `rhythm_pattern/data/templates.json`（运营控制台的 CRUD 目标），选型器经 `PatternSource` 协议读它：
 
-- `DbPatternSource(repo)` — 默认源，`patterns()` 每次重新 `load()`，web 管理器编辑下一次选型即生效，无需重启。读失败（web 管理器非原子写入的半截 JSON）时返回上一次成功的内存快照并告警；**从没成功读过（DB 缺失/损坏/空）则异常照抛**——那是部署问题，不该被陈旧数据掩盖。
+- `DbPatternSource(repo)` — 默认源，`patterns()` 每次重新 `load()`，控制台编辑下一次选型即生效，无需重启。读失败（写入方的非原子写窗口）时返回上一次成功的内存快照并告警；**从没成功读过（DB 缺失/损坏/空）则异常照抛**——那是部署问题，不该被陈旧数据掩盖。
 - `ListPatternSource(patterns)` — 固定列表源，测试/嵌入方用 `set_pattern_source` 注入。
 - `set_pattern_source(None)` 重置回默认 DB 源。
 
-下游（后端 `RhythmService`）据此把「DB 不可用」翻译成 `available=false`，前端显示「节奏型服务不可用」横幅。改选型数据流走这条 seam，不要绕过；加模板直接改 DB（web 管理器），不要往代码里加模板表。
+下游（后端 `RhythmService`）据此把「DB 不可用」翻译成 `available=false`，前端显示「节奏型服务不可用」横幅。改选型数据流走这条 seam，不要绕过；加模板走运营控制台（`/api/admin/rhythm/*`），不要往代码里加模板表。
 
-**测试也读这份 DB**（`ALL_PATTERNS = get_pattern_source().patterns()`），即测的就是线上真数据；代价是 web 管理器一改模板，部分断言（尤其 `rhythm_main.py::check_benchmark` 的期望集）会跟着红，需要同步更新期望而不是回退数据。
+**测试也读这份 DB**（`ALL_PATTERNS = get_pattern_source().patterns()`），即测的就是线上真数据；代价是运营控制台一改模板，部分断言（尤其 `rhythm_main.py::check_benchmark` 的期望集）会跟着红，需要同步更新期望而不是回退数据。
 
-### Web 管理器解耦契约（`web_manager/adapter.py`）
+### 宿主桥接契约（`web_manager/adapter.py`）
 
-`adapter.py` 是**唯一桥接层**，只导入 `rhythm_pattern` **公开**符号，绝不碰 `_` 前缀私有函数——这是硬约束，保证 `web_manager` 可整体丢弃而不影响核心。集成到别的项目时 `web_manager` 可删。`DbPatternSource` 的实现已上移到核心（`rhythm_pattern`），adapter 只是原样转出 + 提供 `install_db_source(repo)`。
+`adapter.py` 是**唯一桥接层**，只导入 `rhythm_pattern` **公开**符号，绝不碰 `_` 前缀私有函数——这是硬约束，保证 `web_manager` 可整体丢弃而不影响核心。集成到别的项目时保留/替换这个薄桥接即可。`DbPatternSource` 的实现已上移到核心（`rhythm_pattern`），adapter 只是原样转出 + 提供 `install_db_source(repo)`。
 
-`pattern_to_notelist` 是试听核心数据契约：服务端只返回 JSON 音符列表（`/api/preview`），音频在浏览器用 Web Audio 合成，零服务端音频依赖。
+`pattern_to_notelist` 是试听核心数据契约：宿主只返回 JSON 音符列表，音频在浏览器用 Web Audio 合成，零服务端音频依赖。模板 CRUD 已移到宿主运营控制台（`/api/admin/rhythm/*`），本库不再提供独立 Web 入口。
 
-**`tags` 的保护（踩过坑）**：`PUT /api/templates/<id>` 是整条替换，但请求体**没带 `tags` 键时保留原值**，显式给 `[]` 才清空。起因：`readForm()` 曾漏掉这个字段，经管理器保存一次就把模板已有标签冲成空——tags 参与选型（musicnn 标签匹配那维），静默丢失会悄悄改变选型结果，已真丢过两个模板的标签。表单现已带该字段，服务端兜底仍在。回归见 `tests/test_web_manager_server.py`。
+**`tags` 的保护（踩过坑）**：`PUT /api/templates/<id>` 是整条替换，但请求体**没带 `tags` 键时保留原值**，显式给 `[]` 才清空。起因：`readForm()` 曾漏掉这个字段，经管理器保存一次就把模板已有标签冲成空——tags 参与选型（musicnn 标签匹配那维），静默丢失会悄悄改变选型结果，已真丢过两个模板的标签。表单现已带该字段，服务端兜底仍在。回归见宿主 `python_backend/tests/test_admin.py::test_rhythm_templates_crud_and_preview`。
 
 模板 `id` 只存于 DB 记录（不进 `StrumPattern` 构造，核心模型零改动），初始 `id=name`，**id 不可变**，name 可编辑但仓库强制 name 唯一。模板库存 `rhythm_pattern/data/templates.json`。
 

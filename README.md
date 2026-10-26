@@ -1,6 +1,6 @@
 # rhythm-template-library
 
-吉他弹唱的**节奏型模板库 + 自动选型/编排**，配套**指法枚举器**与**浏览器试听的 Web 管理器**。
+吉他弹唱的**节奏型模板库 + 自动选型/编排**，配套**指法枚举器**与**宿主应用桥接层**。
 
 给一段和弦进行（每个和弦占几拍）与段落/风格，为每个和弦选出一个合适的节奏型，输出 16 分音符栅格 + 指法动作序列（扫弦为下扫/上扫、分解为拨弦带具体弦号）。选型把拍数门槛、段落契合、目标密度、技法基线、BPM、位置、进行级连贯性等折算成同一个尺度上的连续代价，越小越靠前。
 
@@ -12,7 +12,7 @@
 |------|------|
 | `rhythm_pattern/` | 核心：节奏型模板库 + 选型器 + 整段编排（扫弦 + 分解） |
 | `chord_fingering/` | 基础库：和弦指法枚举与可演奏性评分，被 `rhythm_pattern` 依赖 |
-| `web_manager/` | 节奏型模板的 Web CRUD 管理器 + 浏览器 Web Audio 试听 |
+| `web_manager/` | 宿主桥接层：`adapter.py` 把模板展开成试听音符；不再带独立 Web 服务器 |
 
 ## 安装
 
@@ -94,14 +94,13 @@ uk  = Fretboard.ukulele()                                         # 尤克里里
 custom = Fretboard.guitar(tuning=("C4", "G3", "D3", "A2"))       # 完全自定义
 ```
 
-### Web 管理器 + 试听
+### 模板编辑 + 试听（宿主应用）
 
-```bash
-uv run rhythm-web                       # 或 uv run python -m web_manager.server
-# 默认 127.0.0.1:8000（DB 缺失则拒绝启动并提示路径——模板只存在于那份 JSON 里）
-```
-
-浏览器里对节奏型模板做 CRUD（存 `rhythm_pattern/data/templates.json`），并直接用 Web Audio 试听——服务端只返回 JSON 音符列表（`/api/preview`），音频在浏览器合成，零服务端音频依赖。
+本库不再带独立 Web 服务器。模板 CRUD 由宿主应用的运营控制台负责
+（GuitarSheetGenerator 的 `/api/admin/rhythm/*`，同样写
+`rhythm_pattern/data/templates.json`）；本库只保留 `web_manager/adapter.py` 作为
+唯一的展开/桥接层：宿主用它把「模板 + 和弦 + 拍数 + BPM」展开成 JSON 音符列表
+（`pattern_to_notelist`），音频在浏览器用 Web Audio 合成，零服务端音频依赖。
 
 ## 核心概念
 
@@ -158,9 +157,9 @@ uv run rhythm-web                       # 或 uv run python -m web_manager.serve
 
 **和弦音省略**：`playability.required_pitch_classes` 按吉他惯例给出可省音级——三和弦不允许任何省略；七和弦及以上允许省完全五音；音数 ≥ 5 时十一音也可省；减五、增五不在可省之列（`dim`/`aug` 的定性音）。`allow_omissions=True`（默认）时开放 C7 `x32310`（缺五音 G）才会被找到。
 
-### Web 管理器的解耦契约
+### 宿主桥接契约（`web_manager/adapter.py`）
 
-`web_manager/adapter.py` 是唯一桥接层，只导入 `rhythm_pattern` **公开**符号（`set_pattern_source`/`instantiate_pattern`/`resolve_voicing`/`TemplateRepository` 等），绝不碰 `_` 前缀私有函数。选型数据源用全局可注入源：`set_pattern_source(source)` 注入 `PatternSource`；默认源 `DbPatternSource` 读 `templates.json`（模板的唯一真源，代码里没有模板表），web 启动时用 `install_db_source(repo)` 指向管理器那份库。集成到别的项目时 `web_manager` 可整体丢弃而不影响 `rhythm_pattern`。
+`web_manager/adapter.py` 是唯一桥接层，只导入 `rhythm_pattern` **公开**符号（`set_pattern_source`/`instantiate_pattern`/`resolve_voicing`/`TemplateRepository` 等），绝不碰 `_` 前缀私有函数。选型数据源用全局可注入源：`set_pattern_source(source)` 注入 `PatternSource`；默认源 `DbPatternSource` 读 `templates.json`（模板的唯一真源，代码里没有模板表），宿主启动时用 `install_db_source(repo)` 指向同一份库。集成到别的项目时 `web_manager` 可整体丢弃而不影响 `rhythm_pattern`。
 
 模板 `id` 只存于 DB 记录（不进 `StrumPattern` 构造，核心模型零改动），初始 `id=name`，**id 不可变**，name 可编辑但仓库强制 name 唯一。
 
@@ -173,14 +172,12 @@ rhythm_pattern/           # 核心：节奏型模板库 + 选型器
                           #   + plan_song_rhythm（全曲统一选型）+ SelectionContext
   string_role.py          # 弦角色：Root/Third/Fifth/Seventh/TopN/FromTop/All（按 voicing 实例化弦号）
   serialization.py        # JSON 模板仓库 TemplateRepository + 旧格式迁移工具
-  data/templates.json     # 模板数据库 = 模板的唯一真源（web 管理器 CRUD）
+  data/templates.json     # 模板数据库 = 模板的唯一真源（运营控制台 CRUD）
 chord_fingering/          # 基础库：和弦指法枚举与可演奏性评分
   fingering_enumerator.py # 枚举器：笛卡尔积搜索 + 物理剪枝 + 排序
   playability.py          # 可演奏性模型：手指分配 (硬约束) + 连续代价 (评分)
-web_manager/              # 节奏型模板 Web CRUD + 浏览器 Web Audio 试听
-  server.py               # stdlib http.server 路由
+web_manager/              # 宿主桥接包（不再带独立 Web 服务器）
   adapter.py              # 唯一桥接层（只碰 rhythm_pattern 公开 API）+ pattern_to_notelist
-  static/                 # 原生 JS 前端（无 npm）
 rhythm_main.py            # 节奏型选型/编排的审计入口（内联断言验证）
 main.py                   # 指法枚举的演示 + 内联断言验证入口
 tests/                    # pytest 测试
