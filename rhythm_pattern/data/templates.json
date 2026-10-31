@@ -2,6 +2,7 @@
   {
     "id": "boom-chick",
     "name": "boom-chick",
+    "display_name": "民谣低音扫弦（1拍）",
     "grid_motif": [
       {
         "type": "stroke",
@@ -35,6 +36,7 @@
   {
     "id": "folk D-DU",
     "name": "folk D-DU",
+    "display_name": "民谣扫弦 下-下上",
     "grid_motif": [
       {
         "type": "stroke",
@@ -89,6 +91,7 @@
   {
     "id": "pop D-DU-U-DU",
     "name": "pop D-DU-U-DU",
+    "display_name": "流行扫弦 下-下上-上-下上",
     "grid_motif": [
       {
         "type": "stroke",
@@ -164,6 +167,7 @@
   {
     "id": "root-5-top2 (1拍)",
     "name": "root-5-top2 (1拍)",
+    "display_name": "根音-五音-高音分解（1拍）",
     "grid_motif": [
       {
         "type": "pluck",
@@ -232,6 +236,7 @@
   {
     "id": "53231323 (16分)",
     "name": "53231323 (16分)",
+    "display_name": "分解 53231323（16分）",
     "grid_motif": [
       {
         "type": "pluck",
@@ -333,6 +338,7 @@
   {
     "id": "53231323 (8分)",
     "name": "53231323 (8分)",
+    "display_name": "分解 53231323（8分）",
     "grid_motif": [
       {
         "type": "pluck",
@@ -434,6 +440,7 @@
   {
     "id": "5323 (8分)",
     "name": "5323 (8分)",
+    "display_name": "分解 5323（8分）",
     "grid_motif": [
       {
         "type": "pluck",
@@ -498,6 +505,7 @@
   {
     "id": "arpeggio placeholder",
     "name": "arpeggio placeholder",
+    "display_name": "琶音过渡（占位）",
     "grid_motif": [
       {
         "type": "pluck",
@@ -548,6 +556,7 @@
   {
     "id": "arpeggio cadence (tail)",
     "name": "arpeggio cadence (tail)",
+    "display_name": "琶音收束（尾和弦）",
     "grid_motif": [
       {
         "type": "pluck",
@@ -616,6 +625,7 @@
   {
     "id": "arpeggio cadence short (tail)",
     "name": "arpeggio cadence short (tail)",
+    "display_name": "琶音收束·短（尾和弦）",
     "grid_motif": [
       {
         "type": "pluck",
@@ -682,6 +692,7 @@
   {
     "id": "arpeggio roll (tail)",
     "name": "arpeggio roll (tail)",
+    "display_name": "琶音滚奏（尾和弦）",
     "grid_motif": [
       {
         "type": "pluck",
@@ -723,6 +734,7 @@
   {
     "id": "6/8 folk D-DU",
     "name": "6/8 folk D-DU",
+    "display_name": "6/8 民谣扫弦 下-下上",
     "grid_motif": [
       {
         "type": "stroke",
@@ -764,6 +776,7 @@
   {
     "id": "6/8 pop D-·U-DU",
     "name": "6/8 pop D-·U-DU",
+    "display_name": "6/8 流行扫弦 下-·上-下上",
     "grid_motif": [
       {
         "type": "stroke",
@@ -809,6 +822,7 @@
   {
     "id": "6/8 rock dotted down",
     "name": "6/8 rock dotted down",
+    "display_name": "6/8 摇滚附点下扫",
     "grid_motif": [
       {
         "type": "stroke",
@@ -851,6 +865,7 @@
   {
     "id": "6/8 arpeggio root-5-top",
     "name": "6/8 arpeggio root-5-top",
+    "display_name": "6/8 分解 根音-五音-高音",
     "grid_motif": [
       {
         "type": "pluck",
@@ -916,6 +931,7 @@
   {
     "id": "6/8 arpeggio cadence (tail)",
     "name": "6/8 arpeggio cadence (tail)",
+    "display_name": "6/8 琶音收束（尾和弦）",
     "grid_motif": [
       {
         "type": "pluck",
@@ -967,6 +983,7 @@
   {
     "id": "6/8 arpeggio roll (tail)",
     "name": "6/8 arpeggio roll (tail)",
+    "display_name": "6/8 琶音滚奏（尾和弦）",
     "grid_motif": [
       {
         "type": "pluck",
@@ -1007,6 +1024,7 @@
   {
     "id": "3/4 532132 (8分)",
     "name": "3/4 532132 (8分)",
+    "display_name": "3/4 分解 532132（8分）",
     "grid_motif": [
       {
         "type": "pluck",
@@ -1091,6 +1109,7 @@
   {
     "id": "6/8 532132 (8分)",
     "name": "6/8 532132 (8分)",
+    "display_name": "6/8 分解 532132（8分）",
     "grid_motif": [
       {
         "type": "pluck",
@@ -1174,6 +1193,7 @@
   {
     "id": "3/4 waltz D-D-DU",
     "name": "3/4 waltz D-D-DU",
+    "display_name": "3/4 华尔兹扫弦 下-下-下上",
     "grid_motif": [
       {
         "type": "stroke",
@@ -1226,6 +1246,7 @@
   {
     "id": "3/4 boom-chick",
     "name": "3/4 boom-chick",
+    "display_name": "3/4 低音扫弦",
     "grid_motif": [
       {
         "type": "stroke",
@@ -1256,6 +1277,7 @@
   {
     "id": "3/4 arpeggio cadence (tail)",
     "name": "3/4 arpeggio cadence (tail)",
+    "display_name": "3/4 琶音收束（尾和弦）",
     "grid_motif": [
       {
         "type": "pluck",

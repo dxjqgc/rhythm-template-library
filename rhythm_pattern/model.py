@@ -277,6 +277,10 @@ class StrumPattern:
     """musicnn 风格标签集，影响选型的标签子集。空（默认）= 未标，选型退回 ``style`` 罚分
     fallback；非空时按标签匹配度打分（见 :func:`strum_patterns._tag_mismatch`）。
     模板标签无权重（同等重要），与 musicnn 带置信度的标签集做加权匹配。"""
+    display_name: str = ""
+    """面向用户的中文显示名。空（默认）= 未设，宿主 UI 回退显示 ``name``。
+    ``name`` 是机器键（选型兜底按 name 查模板、前端 pattern_id pin、测试断言），
+    不得改成中文；用户可读名一律走这里。"""
 
     def __post_init__(self) -> None:
         if self.time_signature[1] not in (4, 8):

@@ -151,6 +151,7 @@ def pattern_to_dict(pattern: StrumPattern) -> dict:
     """
     return {
         "name": pattern.name,
+        "display_name": pattern.display_name,
         "grid_motif": [_cell_to_dict(c) for c in pattern.grid_motif],
         "motif_beats": pattern.motif_beats,
         "min_beats": pattern.min_beats,
@@ -172,9 +173,11 @@ def dict_to_pattern(d: dict) -> StrumPattern:
 
     ``time_signature`` 缺省取 ``(4, 4)``，向后兼容旧无拍号字段的记录。
     ``tags`` 缺省取空元组，向后兼容旧无标签字段的记录。
+    ``display_name`` 缺省取空串，向后兼容旧无显示名字段的记录。
     """
     return StrumPattern(
         name=d["name"],
+        display_name=str(d.get("display_name", "")),
         grid_motif=tuple(_cell_from_dict(c) for c in d["grid_motif"]),
         motif_beats=d["motif_beats"],
         min_beats=d["min_beats"],
