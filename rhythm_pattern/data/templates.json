@@ -36,7 +36,7 @@
   {
     "id": "folk D-DU",
     "name": "folk D-DU",
-    "display_name": "民谣扫弦 下-下上",
+    "display_name": "民谣扫弦 下-下上下",
     "grid_motif": [
       {
         "type": "stroke",
@@ -91,7 +91,7 @@
   {
     "id": "pop D-DU-U-DU",
     "name": "pop D-DU-U-DU",
-    "display_name": "流行扫弦 下-下上-上-下上",
+    "display_name": "流行扫弦 下-下上下 ×2",
     "grid_motif": [
       {
         "type": "stroke",
@@ -505,7 +505,7 @@
   {
     "id": "arpeggio placeholder",
     "name": "arpeggio placeholder",
-    "display_name": "琶音过渡（占位）",
+    "display_name": "分解过渡 根音-高音双音（占位）",
     "grid_motif": [
       {
         "type": "pluck",
@@ -734,7 +734,7 @@
   {
     "id": "6/8 folk D-DU",
     "name": "6/8 folk D-DU",
-    "display_name": "6/8 民谣扫弦 下-下上",
+    "display_name": "6/8 扫弦 下-上",
     "grid_motif": [
       {
         "type": "stroke",
@@ -776,7 +776,7 @@
   {
     "id": "6/8 pop D-·U-DU",
     "name": "6/8 pop D-·U-DU",
-    "display_name": "6/8 流行扫弦 下-·上-下上",
+    "display_name": "6/8 流行扫弦 下· 下上",
     "grid_motif": [
       {
         "type": "stroke",
